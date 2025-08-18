@@ -1,0 +1,34 @@
+{
+  "name": "travel-web",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon --inspect index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "cloudinary": "^2.7.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "md5": "^2.3.0",
+    "moment": "^2.30.1",
+    "mongoose": "^8.17.1",
+    "mongoose-slug-updater": "^3.3.0",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.5",
+    "otp-generator": "^4.0.1",
+    "socket.io": "^4.8.1",
+    "streamifier": "^0.1.1",
+    "tinymce": "^8.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
