@@ -22,13 +22,28 @@ const TourSchema = new mongoose.Schema({
   discount: Number,
   tags: [String],
   seats: Number,
-  description: String,
+  description: [
+    {
+      day: Number,
+      title: String,
+      image: String,
+      description: String,
+    },
+  ],
+  term: [
+    {
+      index: Number,
+      termId: { type: mongoose.Schema.Types.ObjectId, ref: "Term" },
+      description: String,
+    },
+  ],
   createdAt: Date,
   updatedAt: Date,
   vehicleId: [{ type: mongoose.Schema.Types.ObjectId, ref: "Vehicle" }],
   slug: String,
   type: String,
   frequency: { type: mongoose.Schema.Types.ObjectId, ref: "Frequency" },
+  specialExperience: String,
 });
 
 const Tour = mongoose.model("Tour", TourSchema, "tours");

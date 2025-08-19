@@ -13,6 +13,7 @@ const TravelTime = require("../models/travel-time.model");
 const Frequency = require("../models/frequency.model");
 const Hotel = require("../models/hotel.model");
 const Banner = require("../models/banner.model");
+const Term = require("../models/term.model");
 const buildTree = require("../../../helpers/buildTree");
 module.exports.province = async (req, res) => {
   try {
@@ -184,7 +185,8 @@ module.exports.detailTour = async (req, res) => {
       .populate("travelTimeId", "day night")
       .populate("hotelId", "name thumbnail star")
       .populate("vehicleId", "name image")
-      .populate("frequency", "title") // Thêm populate cho Frequency
+      .populate("frequency", "title")
+      .populate("term.termId", "title icon") // Populate termId trong mảng term
       .lean();
 
     if (!tourDetail) {
