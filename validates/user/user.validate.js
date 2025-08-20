@@ -9,7 +9,7 @@ module.exports.validateRegisterUser = async (req, res, next) => {
   }
 
   // Email: phải đúng định dạng + chưa tồn tại
-  errors.push(...(await validateEmail(email, { mustNotExist: true })));
+  errors.push(...(await validateEmail(email, { mustNotExist: false })));
 
   if (!password || password.trim() === "") {
     errors.push({ field: "password", message: "Vui lòng nhập mật khẩu" });

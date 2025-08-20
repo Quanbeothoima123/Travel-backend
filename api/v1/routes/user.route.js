@@ -8,6 +8,8 @@ router.post(
   controller.register
 );
 router.post("/auth", controller.auth);
+router.post("/reAuth", controller.reAuth);
+router.post("/reInfo", controller.reInfo);
 router.post("/resendOtp", controller.resendOtp);
 
 module.exports = router;
