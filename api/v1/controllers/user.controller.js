@@ -2,7 +2,8 @@ const md5 = require("md5");
 const User = require("../models/user.model");
 const Otp = require("../models/otp.model"); // nhớ import Otp
 const sendOtp = require("../../../helpers/otpGenerator");
-
+const jwt = require("jsonwebtoken");
+const JWT_SECRET = process.env.JWT_SECRET;
 // [POST] /api/v1/user/register
 module.exports.register = async (req, res) => {
   try {
@@ -130,11 +131,9 @@ module.exports.reAuth = async (req, res) => {
       return res.status(404).json({ message: "Email không tồn tại" });
     }
     if (user.status === "active") {
-      return res
-        .status(404)
-        .json({
-          message: "Tài khoản đã xác thực vui lòng không lảng vảng ở đây!",
-        });
+      return res.status(404).json({
+        message: "Tài khoản đã xác thực vui lòng không lảng vảng ở đây!",
+      });
     }
 
     // Xóa OTP cũ
@@ -183,4 +182,56 @@ module.exports.reInfo = async (req, res) => {
     console.error(error);
     res.status(500).json({ message: "Lỗi server" });
   }
+};
+
+module.exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email }).select("password fullName");
+
+    if (!user || md5(password) !== user.password) {
+      return res.json({
+        code: 400,
+        message: "Sai mật khẩu hoặc tài khoản",
+      });
+    }
+
+    // Tạo JWT
+    const token = jwt.sign(
+      { userId: user._id, fullName: user.fullName },
+      JWT_SECRET,
+      { expiresIn: "7d" } // token sống 7 ngày
+    );
+
+    // Set cookie (httpOnly để bảo mật hơn)
+    res.cookie("authToken", token, {
+      httpOnly: true,
+      secure: false, // true nếu dùng HTTPS
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.json({
+      code: 200,
+      message: "Đăng nhập thành công",
+      token,
+      fullName: user.fullName,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+module.exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select("fullName email");
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+module.exports.logout = (req, res) => {
+  res.clearCookie("authToken");
+  return res.json({ message: "Đăng xuất thành công" });
 };

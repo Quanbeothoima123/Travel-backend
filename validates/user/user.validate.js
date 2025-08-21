@@ -34,7 +34,6 @@ module.exports.validateRegisterUser = async (req, res, next) => {
 module.exports.validateLogin = async (req, res, next) => {
   const { email } = req.body;
   let errors = [];
-
   // Email: phải đúng định dạng + phải tồn tại
   errors.push(...(await validateEmail(email, { mustExist: true })));
 

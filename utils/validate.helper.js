@@ -31,7 +31,6 @@ const validateEmail = async (email, options = {}) => {
     if (mustExist) {
       const user = await User.findOne({
         email,
-        deleted: false,
         status: "active",
       });
       if (!user) {
