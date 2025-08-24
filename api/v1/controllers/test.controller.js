@@ -14,7 +14,9 @@ const Frequency = require("../models/frequency.model");
 const Hotel = require("../models/hotel.model");
 const Banner = require("../models/banner.model");
 const Term = require("../models/term.model");
+const TypeOfPerson = require("../models/type-of-person.model");
 const buildTree = require("../../../helpers/buildTree");
+const getAllDescendantIds = require("../../../helpers/getAllDescendantIds");
 module.exports.province = async (req, res) => {
   try {
     const province = await Province.find();
@@ -180,13 +182,15 @@ module.exports.detailTour = async (req, res) => {
   try {
     const slug = req.params.slug;
 
-    const tourDetail = await Tour.findOne({ slug: slug })
+    const tourDetail = await Tour.findOne({ slug })
+      .select("-createdAt -updatedAt -__v")
       .populate("categoryId", "title slug")
       .populate("travelTimeId", "day night")
       .populate("hotelId", "name thumbnail star")
       .populate("vehicleId", "name image")
       .populate("frequency", "title")
-      .populate("term.termId", "title icon") // Populate termId trong mảng term
+      .populate("term.termId", "title icon")
+      .populate("additionalPrices.typeOfPersonId", "name")
       .lean();
 
     if (!tourDetail) {
@@ -194,6 +198,38 @@ module.exports.detailTour = async (req, res) => {
     }
 
     res.json({ tourDetail });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+// ✅ Lấy danh sách tour theo category.slug (bao gồm category con)
+module.exports.tourListByCategory = async (req, res) => {
+  try {
+    const slug = req.params.slug;
+
+    // tìm category gốc theo slug
+    const rootCategory = await TourCategory.findOne({ slug }).lean();
+    if (!rootCategory) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy tour có danh mục này" });
+    }
+
+    // lấy tất cả category con
+    const childIds = await getAllDescendantIds(rootCategory._id); // trả về string[]
+    const allCategoryIds = [
+      rootCategory._id.toString(),
+      ...childIds.map((id) => id.toString()),
+    ];
+    // lấy tour list chỉ với title + slug
+    const tourList = await Tour.find({
+      categoryId: { $in: allCategoryIds },
+    })
+      .select("title slug")
+      .lean();
+    res.json(tourList);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Lỗi server" });

@@ -18,7 +18,7 @@ const TourSchema = new mongoose.Schema({
       googleMap: String,
     },
   ],
-  prices: Number,
+  prices: Number, // giá cơ bản
   discount: Number,
   tags: [String],
   seats: Number,
@@ -44,6 +44,16 @@ const TourSchema = new mongoose.Schema({
   type: String,
   frequency: { type: mongoose.Schema.Types.ObjectId, ref: "Frequency" },
   specialExperience: String,
+
+  additionalPrices: [
+    {
+      typeOfPersonId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "TypeOfPerson",
+      },
+      moneyMore: { type: Number, default: 0 },
+    },
+  ],
 });
 
 const Tour = mongoose.model("Tour", TourSchema, "tours");

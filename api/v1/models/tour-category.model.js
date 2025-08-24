@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const TourCategorySchema = new mongoose.Schema({
   title: String,
-  parentId: String,
+  parentId: { type: mongoose.Schema.Types.ObjectId, default: null }, // Đổi thành ObjectId
   slug: String,
 });
 
