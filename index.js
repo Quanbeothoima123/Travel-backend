@@ -12,14 +12,20 @@ const routesApiVer1 = require("./api/v1/routes/index.route");
 
 const app = express();
 const port = process.env.PORT || 5000;
+
 app.use(cookieParser(""));
+// parse body json
 app.use(bodyParser.json());
+// parse form-urlencoded (MoMo IPN gửi dạng này)
+app.use(bodyParser.urlencoded({ extended: true }));
+
 app.use(
   cors({
     origin: "http://localhost:3000", // FE URL
     credentials: true, // cho phép gửi cookie
   })
 );
+
 database.connect();
 
 // Routes Version 1
