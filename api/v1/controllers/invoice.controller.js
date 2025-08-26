@@ -174,7 +174,7 @@ module.exports.payWithMomo = async (req, res) => {
       orderId: invoice._id.toString(),
       orderInfo: `Thanh toán đơn hàng ${invoiceCode}`,
       redirectUrl: "http://localhost:3000",
-      ipnUrl: "http://localhost:5000/api/v1/momo-ipn",
+      ipnUrl: "https://3f953d48ebe6.ngrok-free.app/api/v1/momo-ipn",
     });
 
     if (momoRes?.payUrl) {

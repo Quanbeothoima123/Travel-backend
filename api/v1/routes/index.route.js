@@ -4,6 +4,7 @@ const customerConsolationRoute = require("./customer-consolation.route");
 const wardRoute = require("../routes/ward.route");
 const typeOfPersonRoute = require("../routes/type-of-person.route");
 const invoiceRoute = require("../routes/invoice.route");
+const tourRoutes = require("../routes/tour.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -12,4 +13,5 @@ module.exports = (app) => {
   app.use(version + "/wards", wardRoute);
   app.use(version, typeOfPersonRoute);
   app.use(version, invoiceRoute);
+  app.use(version + "/tours", tourRoutes);
 };

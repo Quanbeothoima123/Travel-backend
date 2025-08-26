@@ -227,8 +227,33 @@ module.exports.tourListByCategory = async (req, res) => {
     const tourList = await Tour.find({
       categoryId: { $in: allCategoryIds },
     })
-      .select("title slug")
+      .select(
+        "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type"
+      )
       .lean();
+    for (let item of tourList) {
+      item.vehicle = [];
+      const travelTime = await TravelTime.findById(item.travelTimeId).lean();
+      if (travelTime) {
+        item.day = travelTime.day;
+        item.night = travelTime.night;
+      }
+
+      const listVehicle = await Vehicle.find({ _id: item.vehicleId }).lean();
+      if (listVehicle.length > 0) {
+        item.vehicle = listVehicle.map((vehicle) => vehicle.name);
+      }
+
+      const frequencyObject = await Frequency.findOne({
+        _id: item.frequency,
+      }).lean();
+      item.frequency = frequencyObject?.title || "";
+
+      const hotelObject = await Hotel.findOne({ _id: item.hotelId })
+        .select("star")
+        .lean();
+      item.hotelStar = hotelObject?.star || 0;
+    }
     res.json(tourList);
   } catch (error) {
     console.error(error);
