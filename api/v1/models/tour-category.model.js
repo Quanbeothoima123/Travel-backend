@@ -1,9 +1,18 @@
 const mongoose = require("mongoose");
 
 const TourCategorySchema = new mongoose.Schema({
-  title: String,
-  parentId: { type: mongoose.Schema.Types.ObjectId, default: null }, // Đổi thành ObjectId
-  slug: String,
+  title: { type: String, required: true },
+  parentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "TourCategory",
+    default: null,
+  },
+  slug: { type: String, required: true },
+  updatedAt: { type: Date, default: Date.now },
+  createdAt: { type: Date, default: Date.now },
+  deletedAt: { type: Date, default: null },
+  deleted: { type: Boolean, default: false },
+  active: { type: Boolean, default: true },
 });
 
 const TourCategory = mongoose.model(
@@ -11,4 +20,5 @@ const TourCategory = mongoose.model(
   TourCategorySchema,
   "tour-category"
 );
+
 module.exports = TourCategory;
