@@ -1,6 +1,6 @@
-const TourCategory = require("../models/tour-category.model");
-const buildTree = require("../../../helpers/buildTree");
-const createSlug = require("../../../helpers/createSlug");
+const TourCategory = require("../../models/tour-category.model");
+const buildTree = require("../../../../helpers/buildTree");
+const createSlug = require("../../../../helpers/createSlug");
 const mongoose = require("mongoose");
 
 exports.getAllCategories = async (req, res) => {

@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const TourSchema = new mongoose.Schema({
-  categoryId: [{ type: mongoose.Schema.Types.ObjectId, ref: "TourCategory" }],
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: "TourCategory" },
   title: String,
   thumbnail: String,
   images: [
@@ -18,6 +18,7 @@ const TourSchema = new mongoose.Schema({
       googleMap: String,
     },
   ],
+  position: Number,
   prices: Number, // giá cơ bản
   discount: Number,
   tags: [String],
@@ -41,7 +42,15 @@ const TourSchema = new mongoose.Schema({
   updatedAt: Date,
   vehicleId: [{ type: mongoose.Schema.Types.ObjectId, ref: "Vehicle" }],
   slug: String,
-  type: String,
+  type: {
+    type: String,
+    enum: ["domestic", "aboard"],
+  },
+  active: Boolean,
+  filter: {
+    type: String,
+    enum: ["hot", "deep_discount"],
+  },
   frequency: { type: mongoose.Schema.Types.ObjectId, ref: "Frequency" },
   specialExperience: String,
 

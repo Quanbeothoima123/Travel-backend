@@ -122,7 +122,7 @@ module.exports.infoCategory = async (req, res) => {
 //  lấy dữ liệu cho danh sách tour đưa ra giao diện
 module.exports.tourList = async (req, res, type) => {
   try {
-    const tourList = await Tour.find({ type })
+    const tourList = await Tour.find({ type, active: true })
       .limit(8)
       .select(
         "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type"
