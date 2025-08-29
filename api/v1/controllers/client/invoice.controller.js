@@ -1,7 +1,7 @@
-const Tour = require("../models/tour.model");
-const generateInvoiceCode = require("../../../utils/genCodeInvoice");
-const Invoice = require("../models/invoice.model");
-const { createMomoPayment } = require("../../../utils/momo");
+const Tour = require("../../models/tour.model");
+const generateInvoiceCode = require("../../../../utils/genCodeInvoice");
+const Invoice = require("../../models/invoice.model");
+const { createMomoPayment } = require("../../../../utils/momo");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = process.env;
 

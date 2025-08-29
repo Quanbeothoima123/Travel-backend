@@ -1,0 +1,19 @@
+const tourCategoryRoute = require("../admin/tour-category.route");
+const travelTimeRoute = require("../admin/travel-time.route");
+const hotelRoute = require("../admin/hotel.route");
+const termRoute = require("../admin/term.route");
+const vehicleRoute = require("../admin/vehicle.route");
+const frequencyRoute = require("../admin/frequency.route");
+const tourRoutes = require("./tour.route");
+const typeOfPersonRoute = require("./type-of-person.route");
+module.exports = (app) => {
+  const version = "/api/v1";
+  app.use(version + "/tour-categories", tourCategoryRoute);
+  app.use(version + "/travel-time", travelTimeRoute);
+  app.use(version + "/hotel", hotelRoute);
+  app.use(version + "/term", termRoute);
+  app.use(version + "/vehicle", vehicleRoute);
+  app.use(version + "/frequency", frequencyRoute);
+  app.use(version + "/tours", tourRoutes);
+  app.use(version + "/type-of-person", typeOfPersonRoute);
+};

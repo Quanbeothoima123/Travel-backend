@@ -1,10 +1,10 @@
-const TourCategory = require("../models/tour-category.model");
-const Tour = require("../models/tour.model");
-const Vehicle = require("../models/vehicle.model");
-const TravelTime = require("../models/travel-time.model");
-const Frequency = require("../models/frequency.model");
-const Hotel = require("../models/hotel.model");
-const getAllDescendantIds = require("../../../helpers/getAllDescendantIds");
+const TourCategory = require("../../models/tour-category.model");
+const Tour = require("../../models/tour.model");
+const Vehicle = require("../../models/vehicle.model");
+const TravelTime = require("../../models/travel-time.model");
+const Frequency = require("../../models/frequency.model");
+const Hotel = require("../../models/hotel.model");
+const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 module.exports.getAllTour = async (req, res) => {
   try {
     const tours = await Tour.find({}, "title thumbnail slug");

@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const controller = require("../controllers/admin/tour-category.controller");
+const controller = require("../../controllers/admin/tour-category.controller");
 router.get("", controller.getAllCategories);
 router.get("/recent", controller.getRecentCategories);
 router.post("/create", controller.createCategory);

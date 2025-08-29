@@ -1,5 +1,4 @@
-const Ward = require("../models/ward.model");
-// [GET]
+const Ward = require("../../models/ward.model");
 module.exports.getWardsByProvince = async (req, res) => {
   try {
     const { provinceCode } = req.params;

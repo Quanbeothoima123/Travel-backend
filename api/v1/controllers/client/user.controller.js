@@ -1,7 +1,7 @@
 const md5 = require("md5");
-const User = require("../models/user.model");
-const Otp = require("../models/otp.model"); // nhớ import Otp
-const sendOtp = require("../../../helpers/otpGenerator");
+const User = require("../../models/user.model");
+const Otp = require("../../models/otp.model"); // nhớ import Otp
+const sendOtp = require("../../../../helpers/otpGenerator");
 const jwt = require("jsonwebtoken");
 const JWT_SECRET = process.env.JWT_SECRET;
 // [POST] /api/v1/user/register

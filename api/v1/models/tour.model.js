@@ -12,14 +12,12 @@ const TourSchema = new mongoose.Schema({
   ],
   travelTimeId: { type: mongoose.Schema.Types.ObjectId, ref: "TravelTime" },
   hotelId: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel" },
-  departPlaces: [
-    {
-      place: String,
-      googleMap: String,
-    },
-  ],
+  departPlaces: {
+    place: String,
+    googleMap: String,
+  },
   position: Number,
-  prices: Number, // giá cơ bản
+  prices: Number,
   discount: Number,
   tags: [String],
   seats: Number,

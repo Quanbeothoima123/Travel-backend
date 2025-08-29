@@ -1,4 +1,4 @@
-const TypeOfPerson = require("../models/type-of-person.model");
+const TypeOfPerson = require("../../models/type-of-person.model");
 // [GET] /api/v1/type-of-person
 module.exports.getAllTypeOfPerson = async (req, res) => {
   try {

@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const CustomerConsolation = require("../models/customer-consolation.model");
+const CustomerConsolation = require("../../models/customer-consolation.model");
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // [POST] /api/v1/customer-consolation

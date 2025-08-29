@@ -7,8 +7,8 @@ const database = require("./config/database");
 const cors = require("cors");
 
 require("dotenv").config();
-
-const routesApiVer1 = require("./api/v1/routes/index.route");
+const routeAdmin = require("./api/v1/routes/admin/index.route");
+const routesApiVer1 = require("./api/v1/routes/client/index.route");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -30,7 +30,8 @@ database.connect();
 
 // Routes Version 1
 routesApiVer1(app);
-
+// Route Admin
+routeAdmin(app);
 app.listen(port, () => {
   console.log(`App listening on port ${port}`);
 });
