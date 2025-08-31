@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const userValidate = require("../../../../validates/user/user.validate");
+const userValidate = require("../../../../validates/client/user.validate");
 const controller = require("../../controllers/client/user.controller");
 const { checkAuth } = require("../../../../middlewares/auth.middleware");
 router.post(
