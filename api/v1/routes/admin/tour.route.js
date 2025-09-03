@@ -4,4 +4,5 @@ const controller = require("../../controllers/admin/tour.controller");
 router.get("/tour", controller.getTours);
 router.patch("/tour/bulk-update", controller.bulkUpdateTours);
 router.patch("/tour/:id", controller.updateTour);
+router.post("/create", controller.createTour);
 module.exports = router;

@@ -1,5 +1,5 @@
-const TourCategory = require("../../models/tour-category.model");
 const Tour = require("../../models/tour.model");
+const jwt = require("jsonwebtoken");
 module.exports.getTours = async (req, res) => {
   try {
     const { page = 1, limit = 10, search } = req.query;
@@ -40,7 +40,7 @@ module.exports.bulkUpdateTours = async (req, res) => {
 
     await Tour.updateMany({ _id: { $in: ids } }, { $set: updateData });
 
-    res.json({ message: "Bulk update success" });
+    res.json({ message: `Đã cập nhật ${ids.length} sản phẩm` });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -52,11 +52,58 @@ module.exports.updateTour = async (req, res) => {
     const updated = await Tour.findByIdAndUpdate(id, req.body, { new: true });
 
     if (!updated) {
-      return res.status(404).json({ message: "Tour not found" });
+      return res.status(404).json({ message: "Không tìm thấy tour này!" });
     }
 
     res.json(updated);
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * POST /api/v1/tours/create
+ */
+exports.createTour = async (req, res) => {
+  try {
+    // Lấy token từ cookie
+    const token = req.cookies.adminToken;
+    if (!token) {
+      return res
+        .status(401)
+        .json({ message: "Không có token, vui lòng đăng nhập" });
+    }
+
+    // Giải mã token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET); // nhớ để secret trong .env
+    } catch (err) {
+      return res.status(403).json({ message: "Token không hợp lệ" });
+    }
+
+    // Dữ liệu body từ frontend
+    const body = req.body;
+
+    // Gán thêm createdBy
+    const tourData = {
+      ...body,
+      createdBy: {
+        _id: decoded.id,
+        at: new Date(),
+      },
+    };
+
+    // Tạo tour mới
+    const newTour = new Tour(tourData);
+    await newTour.save();
+
+    return res.status(201).json({
+      message: "Tạo tour thành công",
+      tour: newTour,
+    });
+  } catch (err) {
+    console.error("Lỗi khi tạo tour:", err);
+    res.status(500).json({ message: "Server error" });
   }
 };
