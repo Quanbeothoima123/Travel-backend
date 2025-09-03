@@ -1,4 +1,12 @@
 const Tour = require("../../models/tour.model");
+const mongoose = require("mongoose");
+const TourCategory = require("../../models/tour-category.model");
+const TravelTime = require("../../models/travel-time.model");
+const Hotel = require("../../models/hotel.model");
+const Vehicle = require("../../models/vehicle.model");
+const Frequency = require("../../models/frequency.model");
+const TypeOfPerson = require("../../models/type-of-person.model");
+const Term = require("../../models/term.model");
 const jwt = require("jsonwebtoken");
 module.exports.getTours = async (req, res) => {
   try {
@@ -93,17 +101,107 @@ exports.createTour = async (req, res) => {
         at: new Date(),
       },
     };
+    console.log(req.body);
 
     // Tạo tour mới
-    const newTour = new Tour(tourData);
-    await newTour.save();
+    // const newTour = new Tour(tourData);
+    // await newTour.save();
 
-    return res.status(201).json({
-      message: "Tạo tour thành công",
-      tour: newTour,
-    });
+    // return res.status(201).json({
+    //   message: "Tạo tour thành công",
+    //   tour: newTour,
+    // });
   } catch (err) {
     console.error("Lỗi khi tạo tour:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.checkTour = async (req, res) => {
+  try {
+    const data = req.body;
+
+    // === 1. Check các trường bắt buộc (dùng label) ===
+    const requiredFields = [
+      { field: "categoryId", label: "Danh mục" },
+      { field: "title", label: "Tiêu đề" },
+      { field: "thumbnail", label: "Ảnh bìa" },
+      { field: "images", label: "Ảnh phụ" },
+      { field: "travelTimeId", label: "Thời gian tour" },
+      { field: "hotelId", label: "Khách sạn" },
+      { field: "departPlaces", label: "Nơi khởi hành" },
+      { field: "position", label: "Vị trí" },
+      { field: "prices", label: "Giá tour" },
+      { field: "discount", label: "Giảm giá" },
+      { field: "tags", label: "Tags" },
+      { field: "seats", label: "Số ghế" },
+      { field: "description", label: "Mô tả lịch trình" },
+      { field: "term", label: "Điều khoản" },
+      { field: "vehicleId", label: "Phương tiện" },
+      { field: "slug", label: "Slug" },
+      { field: "type", label: "Loại tour" },
+      { field: "active", label: "Trạng thái" },
+      { field: "filter", label: "Filter" },
+      { field: "frequency", label: "Tần suất" },
+      { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
+      { field: "additionalPrices", label: "Giá bổ sung" },
+    ];
+
+    for (let { field, label } of requiredFields) {
+      if (
+        data[field] === undefined ||
+        data[field] === null ||
+        (typeof data[field] === "string" && data[field].trim() === "") ||
+        (Array.isArray(data[field]) && data[field].length === 0)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `Trường "${label}" không được để trống`,
+        });
+      }
+    }
+
+    // === 2. Check các ID có tồn tại trong DB không ===
+    const checkExists = async (Model, id, name) => {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        throw new Error(`"${name}" không hợp lệ`);
+      }
+      const exists = await Model.findById(id);
+      if (!exists) throw new Error(`"${name}" không tồn tại`);
+    };
+
+    await checkExists(TourCategory, data.categoryId, "Danh mục");
+    await checkExists(TravelTime, data.travelTimeId, "Thời gian tour");
+    await checkExists(Hotel, data.hotelId, "Khách sạn");
+    await checkExists(Frequency, data.frequency, "Tần suất");
+
+    for (let vId of data.vehicleId) {
+      await checkExists(Vehicle, vId, "Phương tiện");
+    }
+
+    for (let t of data.term) {
+      await checkExists(Term, t.termId, "Điều khoản");
+    }
+
+    for (let ap of data.additionalPrices) {
+      await checkExists(TypeOfPerson, ap.typeOfPersonId, "Loại khách");
+    }
+
+    // === 3. Check DescriptionEditor ===
+    for (let d of data.description) {
+      if (!d.title || !d.image || !d.description) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Mỗi ngày trong Mô tả lịch trình phải có đủ Tiêu đề, Ảnh và Nội dung",
+        });
+      }
+    }
+
+    // === Nếu tất cả hợp lệ ===
+    return res.json({ success: true, message: "Dữ liệu tour hợp lệ" });
+  } catch (err) {
+    console.error("Check tour error:", err);
+    return res.status(400).json({ success: false, message: err.message });
   }
 };
