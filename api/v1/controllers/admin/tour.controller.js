@@ -8,6 +8,7 @@ const Frequency = require("../../models/frequency.model");
 const TypeOfPerson = require("../../models/type-of-person.model");
 const Term = require("../../models/term.model");
 const jwt = require("jsonwebtoken");
+const validateTourData = require("../../../../validates/admin/tour.validate");
 module.exports.getTours = async (req, res) => {
   try {
     const { page = 1, limit = 10, search } = req.query;
@@ -101,16 +102,15 @@ exports.createTour = async (req, res) => {
         at: new Date(),
       },
     };
-    console.log(req.body);
 
     // Tạo tour mới
-    // const newTour = new Tour(tourData);
-    // await newTour.save();
+    const newTour = new Tour(tourData);
+    await newTour.save();
 
-    // return res.status(201).json({
-    //   message: "Tạo tour thành công",
-    //   tour: newTour,
-    // });
+    return res.status(201).json({
+      message: "Tạo tour thành công",
+      tour: newTour,
+    });
   } catch (err) {
     console.error("Lỗi khi tạo tour:", err);
     res.status(500).json({ message: "Server error" });
@@ -123,30 +123,29 @@ exports.checkTour = async (req, res) => {
 
     // === 1. Check các trường bắt buộc (dùng label) ===
     const requiredFields = [
-      { field: "categoryId", label: "Danh mục" },
       { field: "title", label: "Tiêu đề" },
-      { field: "thumbnail", label: "Ảnh bìa" },
-      { field: "images", label: "Ảnh phụ" },
+      { field: "slug", label: "Slug" },
+      { field: "categoryId", label: "Danh mục" },
       { field: "travelTimeId", label: "Thời gian tour" },
       { field: "hotelId", label: "Khách sạn" },
-      { field: "departPlaces", label: "Nơi khởi hành" },
-      { field: "position", label: "Vị trí" },
+      { field: "vehicleId", label: "Phương tiện" },
+      { field: "frequency", label: "Tần suất" },
       { field: "prices", label: "Giá tour" },
       { field: "discount", label: "Giảm giá" },
-      { field: "tags", label: "Tags" },
       { field: "seats", label: "Số ghế" },
-      { field: "description", label: "Mô tả lịch trình" },
-      { field: "term", label: "Điều khoản" },
-      { field: "vehicleId", label: "Phương tiện" },
-      { field: "slug", label: "Slug" },
       { field: "type", label: "Loại tour" },
-      { field: "active", label: "Trạng thái" },
       { field: "filter", label: "Filter" },
-      { field: "frequency", label: "Tần suất" },
-      { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
+      { field: "active", label: "Trạng thái" },
+      { field: "position", label: "Vị trí" },
+      { field: "thumbnail", label: "Ảnh bìa" },
+      { field: "images", label: "Thư viện ảnh" },
+      { field: "departPlaces", label: "Nơi khởi hành" },
+      { field: "tags", label: "Tags" },
+      { field: "term", label: "Điều khoản" },
       { field: "additionalPrices", label: "Giá bổ sung" },
+      { field: "description", label: "Mô tả lịch trình" },
+      { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
     ];
-
     for (let { field, label } of requiredFields) {
       if (
         data[field] === undefined ||
@@ -159,6 +158,24 @@ exports.checkTour = async (req, res) => {
           message: `Trường "${label}" không được để trống`,
         });
       }
+    }
+
+    // === 1.1 Check enum cho type & filter ===
+    const allowedTypes = ["domestic", "aboard"];
+    const allowedFilters = ["hot", "deep_discount"];
+
+    if (!allowedTypes.includes(data.type)) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Loại tour" chỉ chấp nhận: ${allowedTypes.join(", ")}`,
+      });
+    }
+
+    if (!allowedFilters.includes(data.filter)) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Filter" chỉ chấp nhận: ${allowedFilters.join(", ")}`,
+      });
     }
 
     // === 2. Check các ID có tồn tại trong DB không ===

@@ -60,8 +60,6 @@ const TourSchema = new mongoose.Schema(
         moneyMore: { type: Number, default: 0 },
       },
     ],
-
-    // ====== NEW FIELDS ======
     createdBy: {
       _id: { type: mongoose.Schema.Types.ObjectId, ref: "AdminAccount" },
       at: { type: Date, default: Date.now },
@@ -79,7 +77,7 @@ const TourSchema = new mongoose.Schema(
     ],
   },
   {
-    timestamps: true, // tự động thêm createdAt và updatedAt
+    timestamps: true,
   }
 );
 
