@@ -4,8 +4,9 @@ const hotelRoute = require("../admin/hotel.route");
 const termRoute = require("../admin/term.route");
 const vehicleRoute = require("../admin/vehicle.route");
 const frequencyRoute = require("../admin/frequency.route");
-const tourRoutes = require("./tour.route");
+const tourRoute = require("./tour.route");
 const typeOfPersonRoute = require("./type-of-person.route");
+const filterRoute = require("./filter.route");
 const adminRoute = require("./admin.route");
 module.exports = (app) => {
   const version = "/api/v1";
@@ -15,7 +16,8 @@ module.exports = (app) => {
   app.use(version + "/term", termRoute);
   app.use(version + "/vehicle", vehicleRoute);
   app.use(version + "/frequency", frequencyRoute);
-  app.use(version + "/tours", tourRoutes);
+  app.use(version + "/tours", tourRoute);
   app.use(version + "/type-of-person", typeOfPersonRoute);
+  app.use(version + "/filter", filterRoute);
   app.use(version + "/admin", adminRoute);
 };

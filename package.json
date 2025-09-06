@@ -11,6 +11,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "body-parser": "^2.2.0",
     "cloudinary": "^2.7.0",
     "cookie-parser": "^1.4.7",
@@ -24,6 +25,7 @@
     "mongoose-slug-updater": "^3.3.0",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.5",
+    "openai": "^5.19.1",
     "otp-generator": "^4.0.1",
     "socket.io": "^4.8.1",
     "streamifier": "^0.1.1",

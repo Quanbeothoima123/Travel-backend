@@ -7,8 +7,10 @@ const Vehicle = require("../../models/vehicle.model");
 const Frequency = require("../../models/frequency.model");
 const TypeOfPerson = require("../../models/type-of-person.model");
 const Term = require("../../models/term.model");
+const Filter = require("../../models/filter.model");
+const { generateTagsAI } = require("../../../../services/tagService");
+const { generateSlug } = require("../../../../services/slugService");
 const jwt = require("jsonwebtoken");
-const validateTourData = require("../../../../validates/admin/tour.validate");
 module.exports.getTours = async (req, res) => {
   try {
     const { page = 1, limit = 10, search } = req.query;
@@ -73,7 +75,7 @@ module.exports.updateTour = async (req, res) => {
 /**
  * POST /api/v1/tours/create
  */
-exports.createTour = async (req, res) => {
+module.exports.createTour = async (req, res) => {
   try {
     // Lấy token từ cookie
     const token = req.cookies.adminToken;
@@ -117,13 +119,16 @@ exports.createTour = async (req, res) => {
   }
 };
 
-exports.checkTour = async (req, res) => {
+/**
+ * POST /api/v1/tours/check-info-tour-create
+ */
+module.exports.checkTour = async (req, res) => {
   try {
     const data = req.body;
 
     // === 1. Check các trường bắt buộc (dùng label) ===
     const requiredFields = [
-      { field: "title", label: "Tiêu đề" },
+      { field: "title", label: "Tên tour" },
       { field: "slug", label: "Slug" },
       { field: "categoryId", label: "Danh mục" },
       { field: "travelTimeId", label: "Thời gian tour" },
@@ -134,7 +139,7 @@ exports.checkTour = async (req, res) => {
       { field: "discount", label: "Giảm giá" },
       { field: "seats", label: "Số ghế" },
       { field: "type", label: "Loại tour" },
-      { field: "filter", label: "Filter" },
+      { field: "filterId", label: "Bộ lọc" },
       { field: "active", label: "Trạng thái" },
       { field: "position", label: "Vị trí" },
       { field: "thumbnail", label: "Ảnh bìa" },
@@ -142,10 +147,10 @@ exports.checkTour = async (req, res) => {
       { field: "departPlaces", label: "Nơi khởi hành" },
       { field: "tags", label: "Tags" },
       { field: "term", label: "Điều khoản" },
-      { field: "additionalPrices", label: "Giá bổ sung" },
       { field: "description", label: "Mô tả lịch trình" },
       { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
     ];
+
     for (let { field, label } of requiredFields) {
       if (
         data[field] === undefined ||
@@ -160,10 +165,29 @@ exports.checkTour = async (req, res) => {
       }
     }
 
-    // === 1.1 Check enum cho type & filter ===
-    const allowedTypes = ["domestic", "aboard"];
-    const allowedFilters = ["hot", "deep_discount"];
+    if (data.discount < 0 || data.discount > 100) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Giảm giá" phải nằm trong khoảng từ 0% đến 100%`,
+      });
+    }
 
+    if (data.prices < 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Giá" có giá trị không âm`,
+      });
+    }
+
+    if (data.seats < 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Số ghế" có giá trị từ 1 trở lên`,
+      });
+    }
+
+    // === 1.1 Check enum cho type ===
+    const allowedTypes = ["domestic", "aboard"];
     if (!allowedTypes.includes(data.type)) {
       return res.status(400).json({
         success: false,
@@ -171,10 +195,12 @@ exports.checkTour = async (req, res) => {
       });
     }
 
-    if (!allowedFilters.includes(data.filter)) {
+    // === 1.2 Check slug duy nhất ===
+    const existingTour = await Tour.findOne({ slug: data.slug });
+    if (existingTour) {
       return res.status(400).json({
         success: false,
-        message: `Trường "Filter" chỉ chấp nhận: ${allowedFilters.join(", ")}`,
+        message: `Slug "${data.slug}" đã tồn tại, vui lòng chọn slug khác`,
       });
     }
 
@@ -196,12 +222,22 @@ exports.checkTour = async (req, res) => {
       await checkExists(Vehicle, vId, "Phương tiện");
     }
 
+    for (let fId of data.filterId) {
+      await checkExists(Filter, fId, "Filter");
+    }
+
     for (let t of data.term) {
       await checkExists(Term, t.termId, "Điều khoản");
     }
 
-    for (let ap of data.additionalPrices) {
-      await checkExists(TypeOfPerson, ap.typeOfPersonId, "Loại khách");
+    // additionalPrices: chỉ check nếu có
+    if (
+      Array.isArray(data.additionalPrices) &&
+      data.additionalPrices.length > 0
+    ) {
+      for (let ap of data.additionalPrices) {
+        await checkExists(TypeOfPerson, ap.typeOfPersonId, "Loại khách");
+      }
     }
 
     // === 3. Check DescriptionEditor ===
@@ -220,5 +256,55 @@ exports.checkTour = async (req, res) => {
   } catch (err) {
     console.error("Check tour error:", err);
     return res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * GET /api/v1/tours/countTours
+ */
+module.exports.countTours = async (req, res) => {
+  try {
+    const count = await Tour.countDocuments();
+    res.json({ success: true, count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+/**
+ * POST /api/v1/tours/generate-tags-ai
+ */
+module.exports.generateTagUsingAI = async (req, res) => {
+  try {
+    const { title } = req.body;
+    if (!title)
+      return res
+        .status(400)
+        .json({ success: false, message: "Bạn chưa nhập tên tour" });
+
+    const tags = await generateTagsAI(title);
+    res.json({ success: true, tags });
+  } catch (err) {
+    console.error("AI error:", err);
+    res.status(500).json({ success: false, message: "AI error" });
+  }
+};
+
+/**
+ * POST /api/v1/tours/generate-slugs-ai
+ */
+module.exports.generateSlugUsingAI = async (req, res) => {
+  try {
+    const { title } = req.body;
+    if (!title)
+      return res
+        .status(400)
+        .json({ success: false, message: "Bạn chưa nhập tên tour" });
+
+    const slug = await generateSlug(title);
+    res.json({ success: true, slug });
+  } catch (err) {
+    console.error("AI error:", err);
+    res.status(500).json({ success: false, message: "AI error" });
   }
 };

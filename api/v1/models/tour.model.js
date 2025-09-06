@@ -44,10 +44,8 @@ const TourSchema = new mongoose.Schema(
       enum: ["domestic", "aboard"],
     },
     active: Boolean,
-    filter: {
-      type: String,
-      enum: ["hot", "deep_discount"],
-    },
+    filter: [{ type: mongoose.Schema.Types.ObjectId, ref: "Filter" }],
+
     frequency: { type: mongoose.Schema.Types.ObjectId, ref: "Frequency" },
     specialExperience: String,
 

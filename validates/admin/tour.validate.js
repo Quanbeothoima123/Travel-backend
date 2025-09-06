@@ -6,7 +6,7 @@ const Frequency = require("../../api/v1/models/frequency.model");
 const Vehicle = require("../../api/v1/models/vehicle.model");
 const Term = require("../../api/v1/models/term.model");
 const TypeOfPerson = require("../../api/v1/models/type-of-person.model");
-
+const Filter = require("../../api/v1/models/filter.model");
 // Hàm tiện ích check ObjectId có tồn tại
 const checkExists = async (Model, id, label) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -19,7 +19,7 @@ const checkExists = async (Model, id, label) => {
 const validateTourData = async (data) => {
   // === 1. Check các trường bắt buộc ===
   const requiredFields = [
-    { field: "title", label: "Tiêu đề" },
+    { field: "title", label: "Tên tour" },
     { field: "slug", label: "Slug" },
     { field: "categoryId", label: "Danh mục" },
     { field: "travelTimeId", label: "Thời gian tour" },
@@ -30,7 +30,7 @@ const validateTourData = async (data) => {
     { field: "discount", label: "Giảm giá" },
     { field: "seats", label: "Số ghế" },
     { field: "type", label: "Loại tour" },
-    { field: "filter", label: "Filter" },
+    { field: "filterId", label: "Filter" },
     { field: "active", label: "Trạng thái" },
     { field: "position", label: "Vị trí" },
     { field: "thumbnail", label: "Ảnh bìa" },
@@ -38,9 +38,9 @@ const validateTourData = async (data) => {
     { field: "departPlaces", label: "Nơi khởi hành" },
     { field: "tags", label: "Tags" },
     { field: "term", label: "Điều khoản" },
-    { field: "additionalPrices", label: "Giá bổ sung" },
     { field: "description", label: "Mô tả lịch trình" },
     { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
+    // additionalPrices: để optional
   ];
 
   for (let { field, label } of requiredFields) {
@@ -54,19 +54,32 @@ const validateTourData = async (data) => {
     }
   }
 
-  // === 2. Check enum ===
-  const allowedTypes = ["domestic", "aboard"];
-  const allowedFilters = ["hot", "deep_discount"];
+  if (data.discount < 0 || data.discount > 100) {
+    return res.status(400).json({
+      success: false,
+      message: `Trường "Giảm giá" phải nằm trong khoảng từ 0% đến 100%`,
+    });
+  }
 
+  if (data.prices < 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Trường "Giá" có giá trị không âm`,
+    });
+  }
+
+  if (data.seats < 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Trường "Số ghế" có giá trị từ 1 trở lên`,
+    });
+  }
+
+  // === 2. Check enum cho type ===
+  const allowedTypes = ["domestic", "aboard"];
   if (!allowedTypes.includes(data.type)) {
     throw new Error(
       `Trường "Loại tour" chỉ chấp nhận: ${allowedTypes.join(", ")}`
-    );
-  }
-
-  if (!allowedFilters.includes(data.filter)) {
-    throw new Error(
-      `Trường "Filter" chỉ chấp nhận: ${allowedFilters.join(", ")}`
     );
   }
 
@@ -84,8 +97,19 @@ const validateTourData = async (data) => {
     await checkExists(Term, t.termId, "Điều khoản");
   }
 
-  for (let ap of data.additionalPrices) {
-    await checkExists(TypeOfPerson, ap.typeOfPersonId, "Loại khách");
+  if (
+    Array.isArray(data.additionalPrices) &&
+    data.additionalPrices.length > 0
+  ) {
+    for (let ap of data.additionalPrices) {
+      await checkExists(TypeOfPerson, ap.typeOfPersonId, "Loại khách");
+    }
+  }
+
+  if (Array.isArray(data.filterId) && data.filterId.length > 0) {
+    for (let fId of data.filterId) {
+      await checkExists(Filter, fId, "Filter");
+    }
   }
 
   // === 4. Check DescriptionEditor ===

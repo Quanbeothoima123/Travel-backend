@@ -7,4 +7,7 @@ router.patch("/tour/bulk-update", controller.bulkUpdateTours);
 router.patch("/tour/:id", controller.updateTour);
 router.post("/create", validate.validateCreateTour, controller.createTour);
 router.post("/check-info-tour-create", controller.checkTour);
+router.get("/countTours", controller.countTours);
+router.post("/generate-tags-ai", controller.generateTagUsingAI);
+router.post("/generate-slug-ai", controller.generateSlugUsingAI);
 module.exports = router;
