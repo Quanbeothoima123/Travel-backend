@@ -110,6 +110,7 @@ module.exports.createTour = async (req, res) => {
     await newTour.save();
 
     return res.status(201).json({
+      success: true,
       message: "Tạo tour thành công",
       tour: newTour,
     });
