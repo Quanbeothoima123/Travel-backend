@@ -9,7 +9,7 @@ const typeOfPersonRoute = require("./type-of-person.route");
 const filterRoute = require("./filter.route");
 const adminRoute = require("./admin.route");
 module.exports = (app) => {
-  const version = "/api/v1";
+  const version = "/api/v1/admin";
   app.use(version + "/tour-categories", tourCategoryRoute);
   app.use(version + "/travel-time", travelTimeRoute);
   app.use(version + "/hotel", hotelRoute);
@@ -19,5 +19,5 @@ module.exports = (app) => {
   app.use(version + "/tours", tourRoute);
   app.use(version + "/type-of-person", typeOfPersonRoute);
   app.use(version + "/filter", filterRoute);
-  app.use(version + "/admin", adminRoute);
+  app.use(version, adminRoute);
 };

@@ -309,3 +309,37 @@ module.exports.generateSlugUsingAI = async (req, res) => {
     res.status(500).json({ success: false, message: "AI error" });
   }
 };
+/**
+ * GET /api/v1/tours/admin/getTourById
+ */
+
+module.exports.getTourById = async (req, res) => {
+  try {
+    const tourId = req.params.tourId;
+
+    const tour = await Tour.findById(tourId)
+      .populate("categoryId", "title")
+      .populate("travelTimeId", "day night")
+      .populate(
+        "hotelId",
+        "name thumbnail images description price discount star"
+      )
+      .populate("vehicleId", "name image")
+      .populate("filter", "label value")
+      .populate("frequency", "title")
+      .populate("term.termId", "title icon")
+      .populate("createdBy._id", "fullName")
+      .populate("deletedBy._id", "fullName")
+      .populate("updatedBy._id", "fullName")
+      .lean();
+
+    if (!tour) {
+      return res.status(404).json({ message: "Tour not found" });
+    }
+
+    res.status(200).json(tour);
+  } catch (error) {
+    console.error("Error fetching tour:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
