@@ -22,7 +22,7 @@ module.exports.getTours = async (req, res) => {
       categoryId,
       active,
     } = req.query;
-    const query = {};
+    const query = { deleted: "false" };
 
     // Search theo title
     if (search) {
@@ -436,5 +436,56 @@ module.exports.getTourById = async (req, res) => {
   } catch (error) {
     console.error("Error fetching tour:", error);
     res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+module.exports.delete = async (req, res) => {
+  try {
+    // Lấy token từ cookie
+    const token = req.cookies.adminToken;
+    if (!token) {
+      return res
+        .status(401)
+        .json({ message: "Không có token, vui lòng đăng nhập" });
+    }
+
+    // Giải mã token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(403).json({ message: "Token không hợp lệ" });
+    }
+
+    const tourId = req.params.tourId;
+
+    // Tìm tour
+    const tour = await Tour.findById(tourId);
+    if (!tour) {
+      return res.status(404).json({ message: "Tour không tồn tại" });
+    }
+
+    // Nếu tour đã bị xóa trước đó
+    if (tour.deleted) {
+      return res.status(400).json({ message: "Tour đã bị xóa trước đó" });
+    }
+
+    // Cập nhật thông tin xóa
+    tour.deleted = true;
+    tour.deletedBy = {
+      _id: decoded.id,
+      at: new Date(),
+    };
+
+    await tour.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Xóa tour thành công",
+      tour,
+    });
+  } catch (error) {
+    console.error("Lỗi khi xóa tour:", error);
+    return res.status(500).json({ message: "Server error" });
   }
 };

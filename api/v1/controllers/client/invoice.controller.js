@@ -88,6 +88,7 @@ module.exports.createInvoice = async (req, res) => {
     await newInvoice.save();
 
     res.status(201).json({
+      success: true,
       message: "Cảm ơn đã đã đặt lịch, chúc bạn sớm có một chuyến đi vui vẻ!",
       invoice: newInvoice,
     });
