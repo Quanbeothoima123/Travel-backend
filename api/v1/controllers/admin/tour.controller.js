@@ -178,7 +178,7 @@ module.exports.checkTour = async (req, res) => {
   try {
     const data = req.body;
 
-    // === 1. Check các trường bắt buộc (dùng label) ===
+    // === 1. Check các trường bắt buộc ===
     const requiredFields = [
       { field: "title", label: "Tên tour" },
       { field: "slug", label: "Slug" },
@@ -217,6 +217,7 @@ module.exports.checkTour = async (req, res) => {
       }
     }
 
+    // === 1.1 Validate giá trị số ===
     if (data.discount < 0 || data.discount > 100) {
       return res.status(400).json({
         success: false,
@@ -227,18 +228,18 @@ module.exports.checkTour = async (req, res) => {
     if (data.prices < 0) {
       return res.status(400).json({
         success: false,
-        message: `Trường "Giá" có giá trị không âm`,
+        message: `Trường "Giá tour" phải >= 0`,
       });
     }
 
-    if (data.seats < 0) {
+    if (data.seats <= 0) {
       return res.status(400).json({
         success: false,
-        message: `Trường "Số ghế" có giá trị từ 1 trở lên`,
+        message: `Trường "Số ghế" phải >= 1`,
       });
     }
 
-    // === 1.1 Check enum cho type ===
+    // === 1.2 Check enum cho type ===
     const allowedTypes = ["domestic", "aboard"];
     if (!allowedTypes.includes(data.type)) {
       return res.status(400).json({
@@ -247,7 +248,7 @@ module.exports.checkTour = async (req, res) => {
       });
     }
 
-    // === 1.2 Check slug duy nhất ===
+    // === 1.3 Check slug duy nhất ===
     const existingTour = await Tour.findOne({ slug: data.slug });
     if (existingTour) {
       return res.status(400).json({
@@ -256,7 +257,7 @@ module.exports.checkTour = async (req, res) => {
       });
     }
 
-    // === 2. Check các ID có tồn tại trong DB không ===
+    // === 2. Check các ID có tồn tại ===
     const checkExists = async (Model, id, name) => {
       if (!mongoose.Types.ObjectId.isValid(id)) {
         throw new Error(`"${name}" không hợp lệ`);
@@ -275,24 +276,67 @@ module.exports.checkTour = async (req, res) => {
     }
 
     for (let fId of data.filterId) {
-      await checkExists(Filter, fId, "Filter");
+      await checkExists(Filter, fId, "Bộ lọc");
     }
 
     for (let t of data.term) {
       await checkExists(Term, t.termId, "Điều khoản");
     }
 
-    // additionalPrices: chỉ check nếu có
+    // === 3. Check allowTypePeople ===
+    if (Array.isArray(data.allowTypePeople)) {
+      for (let pId of data.allowTypePeople) {
+        await checkExists(
+          TypeOfPerson,
+          pId,
+          "Loại khách trong allowTypePeople"
+        );
+      }
+    }
+
+    // === 4. Check additionalPrices ===
     if (
       Array.isArray(data.additionalPrices) &&
       data.additionalPrices.length > 0
     ) {
+      // Bắt buộc phải có allowTypePeople nếu có additionalPrices
+      if (
+        !Array.isArray(data.allowTypePeople) ||
+        data.allowTypePeople.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `Bạn cần chọn "Loại khách được phép" trước khi thêm phụ thu`,
+        });
+      }
+
       for (let ap of data.additionalPrices) {
-        await checkExists(TypeOfPerson, ap.typeOfPersonId, "Loại khách");
+        // Check id tồn tại
+        await checkExists(
+          TypeOfPerson,
+          ap.typeOfPersonId,
+          "Loại khách (phụ thu)"
+        );
+
+        // Check phải nằm trong allowTypePeople
+        if (!data.allowTypePeople.includes(ap.typeOfPersonId)) {
+          return res.status(400).json({
+            success: false,
+            message: `Loại khách ${ap.typeOfPersonId} trong phụ thu không nằm trong danh sách được phép`,
+          });
+        }
+
+        // Check moneyMore hợp lệ
+        if (typeof ap.moneyMore !== "number" || ap.moneyMore <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Giá trị phụ thu cho loại khách ${ap.typeOfPersonId} phải là số dương`,
+          });
+        }
       }
     }
 
-    // === 3. Check DescriptionEditor ===
+    // === 5. Check description ===
     for (let d of data.description) {
       if (!d.title || !d.image || !d.description) {
         return res.status(400).json({
@@ -303,7 +347,7 @@ module.exports.checkTour = async (req, res) => {
       }
     }
 
-    // === Nếu tất cả hợp lệ ===
+    // === Thành công ===
     return res.json({ success: true, message: "Dữ liệu tour hợp lệ" });
   } catch (err) {
     console.error("Check tour error:", err);

@@ -17,7 +17,7 @@ const checkExists = async (Model, id, label) => {
 };
 
 const validateTourData = async (data) => {
-  // === 1. Check các trường bắt buộc ===
+  // 1. Trường bắt buộc
   const requiredFields = [
     { field: "title", label: "Tên tour" },
     { field: "slug", label: "Slug" },
@@ -40,7 +40,6 @@ const validateTourData = async (data) => {
     { field: "term", label: "Điều khoản" },
     { field: "description", label: "Mô tả lịch trình" },
     { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
-    // additionalPrices: để optional
   ];
 
   for (let { field, label } of requiredFields) {
@@ -54,28 +53,18 @@ const validateTourData = async (data) => {
     }
   }
 
+  // 2. Logic số
   if (data.discount < 0 || data.discount > 100) {
-    return res.status(400).json({
-      success: false,
-      message: `Trường "Giảm giá" phải nằm trong khoảng từ 0% đến 100%`,
-    });
+    throw new Error(`Trường "Giảm giá" phải nằm trong khoảng từ 0% đến 100%`);
   }
-
   if (data.prices < 0) {
-    return res.status(400).json({
-      success: false,
-      message: `Trường "Giá" có giá trị không âm`,
-    });
+    throw new Error(`Trường "Giá tour" có giá trị không âm`);
+  }
+  if (data.seats <= 0) {
+    throw new Error(`Trường "Số ghế" phải lớn hơn 0`);
   }
 
-  if (data.seats < 0) {
-    return res.status(400).json({
-      success: false,
-      message: `Trường "Số ghế" có giá trị từ 1 trở lên`,
-    });
-  }
-
-  // === 2. Check enum cho type ===
+  // 3. Enum type
   const allowedTypes = ["domestic", "aboard"];
   if (!allowedTypes.includes(data.type)) {
     throw new Error(
@@ -83,7 +72,7 @@ const validateTourData = async (data) => {
     );
   }
 
-  // === 3. Check tồn tại ID trong DB ===
+  // 4. Check tồn tại ID
   await checkExists(TourCategory, data.categoryId, "Danh mục");
   await checkExists(TravelTime, data.travelTimeId, "Thời gian tour");
   await checkExists(Hotel, data.hotelId, "Khách sạn");
@@ -92,27 +81,20 @@ const validateTourData = async (data) => {
   for (let vId of data.vehicleId) {
     await checkExists(Vehicle, vId, "Phương tiện");
   }
-
+  for (let fId of data.filterId) {
+    await checkExists(Filter, fId, "Filter");
+  }
   for (let t of data.term) {
     await checkExists(Term, t.termId, "Điều khoản");
   }
 
-  if (
-    Array.isArray(data.additionalPrices) &&
-    data.additionalPrices.length > 0
-  ) {
+  if (Array.isArray(data.additionalPrices)) {
     for (let ap of data.additionalPrices) {
       await checkExists(TypeOfPerson, ap.typeOfPersonId, "Loại khách");
     }
   }
 
-  if (Array.isArray(data.filterId) && data.filterId.length > 0) {
-    for (let fId of data.filterId) {
-      await checkExists(Filter, fId, "Filter");
-    }
-  }
-
-  // === 4. Check DescriptionEditor ===
+  // 5. Check mô tả từng ngày
   for (let d of data.description) {
     if (!d.title || !d.image || !d.description) {
       throw new Error(
@@ -124,8 +106,8 @@ const validateTourData = async (data) => {
   return true;
 };
 
-// Middleware cho Express
-module.exports.validateCreateTour = async (req, res, next) => {
+// Middleware Express
+const validateCreateTour = async (req, res, next) => {
   try {
     await validateTourData(req.body);
     next();
@@ -134,8 +116,7 @@ module.exports.validateCreateTour = async (req, res, next) => {
   }
 };
 
-// Xuất thêm để tái sử dụng trong controller khác (ví dụ checkTour)
-module.exports.validateTourData = validateTourData;
+module.exports = { validateCreateTour, validateTourData };
 
 module.exports.validateUpdateCategory = async (req, res, next) => {
   const { id } = req.params;

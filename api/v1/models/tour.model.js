@@ -49,6 +49,10 @@ const TourSchema = new mongoose.Schema(
     frequency: { type: mongoose.Schema.Types.ObjectId, ref: "Frequency" },
     specialExperience: String,
 
+    allowTypePeople: [
+      { type: mongoose.Schema.Types.ObjectId, ref: "TypeOfPerson" },
+    ],
+
     additionalPrices: [
       {
         typeOfPersonId: {

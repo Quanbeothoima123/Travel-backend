@@ -144,3 +144,30 @@ module.exports.searchToursCombined = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+module.exports.detailTour = async (req, res) => {
+  try {
+    const slug = req.params.slug;
+
+    const tourDetail = await Tour.findOne({ slug })
+      .select("-createdAt -updatedAt -__v")
+      .populate("categoryId", "title slug")
+      .populate("travelTimeId", "day night")
+      .populate("hotelId", "name thumbnail star")
+      .populate("vehicleId", "name image")
+      .populate("frequency", "title")
+      .populate("term.termId", "title icon")
+      .populate("additionalPrices.typeOfPersonId", "name")
+      .populate("allowTypePeople", "name") // 👈 thêm populate cho loại người tham gia
+      .lean();
+
+    if (!tourDetail) {
+      return res.status(404).json({ message: "Tour not found" });
+    }
+
+    res.json({ tourDetail });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};

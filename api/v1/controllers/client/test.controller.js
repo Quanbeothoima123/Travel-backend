@@ -178,32 +178,6 @@ module.exports.banner = async (req, res) => {
 
 // Trả về banner trên và dưới của trang chủ
 
-module.exports.detailTour = async (req, res) => {
-  try {
-    const slug = req.params.slug;
-
-    const tourDetail = await Tour.findOne({ slug })
-      .select("-createdAt -updatedAt -__v")
-      .populate("categoryId", "title slug")
-      .populate("travelTimeId", "day night")
-      .populate("hotelId", "name thumbnail star")
-      .populate("vehicleId", "name image")
-      .populate("frequency", "title")
-      .populate("term.termId", "title icon")
-      .populate("additionalPrices.typeOfPersonId", "name")
-      .lean();
-
-    if (!tourDetail) {
-      return res.status(404).json({ message: "Tour not found" });
-    }
-
-    res.json({ tourDetail });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Lỗi server" });
-  }
-};
-
 // ✅ Lấy danh sách tour theo category.slug (bao gồm category con)
 module.exports.tourListByCategory = async (req, res) => {
   try {
