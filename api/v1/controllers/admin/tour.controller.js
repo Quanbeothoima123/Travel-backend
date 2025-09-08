@@ -10,25 +10,76 @@ const Term = require("../../models/term.model");
 const Filter = require("../../models/filter.model");
 const { generateTagsAI } = require("../../../../services/tagService");
 const { generateSlug } = require("../../../../services/slugService");
+const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 const jwt = require("jsonwebtoken");
 module.exports.getTours = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search } = req.query;
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      sort,
+      categoryId,
+      active,
+    } = req.query;
     const query = {};
 
+    // Search theo title
     if (search) {
       query.title = { $regex: search, $options: "i" };
     }
 
-    const total = await Tour.countDocuments(query);
+    // Filter theo category (bao gồm cả con)
+    if (categoryId) {
+      const ids = await getAllDescendantIds(categoryId);
+      query.categoryId = { $in: [categoryId, ...ids] };
+    }
 
+    // Filter theo trạng thái
+    if (active === "true") query.active = true;
+    if (active === "false") query.active = false;
+
+    // Sort
+    let sortObj = { createdAt: -1 };
+    if (sort) {
+      switch (sort) {
+        case "price_desc":
+          sortObj = { prices: -1 };
+          break;
+        case "price_asc":
+          sortObj = { prices: 1 };
+          break;
+        case "position_desc":
+          sortObj = { position: -1 };
+          break;
+        case "position_asc":
+          sortObj = { position: 1 };
+          break;
+        case "discount_desc":
+          sortObj = { discount: -1 };
+          break;
+        case "discount_asc":
+          sortObj = { discount: 1 };
+          break;
+        case "title_asc":
+          sortObj = { title: 1 };
+          break;
+        case "title_desc":
+          sortObj = { title: -1 };
+          break;
+      }
+    }
+
+    // Pagination
+    const total = await Tour.countDocuments(query);
     const tours = await Tour.find(query)
       .populate("categoryId", "title slug")
       .skip((page - 1) * limit)
       .limit(Number(limit))
-      .sort({ createdAt: -1 });
+      .sort(sortObj);
 
     res.json({
+      success: true,
       data: tours,
       pagination: {
         total,
@@ -37,7 +88,7 @@ module.exports.getTours = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
