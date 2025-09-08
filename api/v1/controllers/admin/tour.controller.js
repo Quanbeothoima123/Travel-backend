@@ -439,6 +439,9 @@ module.exports.getTourById = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/v1/admin/tours/delete/:tourId
+ */
 module.exports.delete = async (req, res) => {
   try {
     // Lấy token từ cookie
@@ -487,5 +490,95 @@ module.exports.delete = async (req, res) => {
   } catch (error) {
     console.error("Lỗi khi xóa tour:", error);
     return res.status(500).json({ message: "Server error" });
+  }
+};
+
+/**
+ * GET /api/v1/admin/tours/update/:tourId
+ */
+
+module.exports.updateTour = async (req, res) => {
+  try {
+    // === 1. Lấy token từ cookie ===
+    const token = req.cookies.adminToken;
+    if (!token) {
+      return res
+        .status(401)
+        .json({
+          success: false,
+          message: "Không có token, vui lòng đăng nhập",
+        });
+    }
+
+    // === 2. Giải mã token ===
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Token không hợp lệ" });
+    }
+
+    const { tourId } = req.params;
+
+    // === 3. Tìm tour ===
+    const tour = await Tour.findById(tourId);
+    if (!tour) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy tour" });
+    }
+
+    // === 4. Cập nhật từng trường nếu có trong body ===
+    const fields = [
+      "categoryId",
+      "title",
+      "thumbnail",
+      "images",
+      "travelTimeId",
+      "hotelId",
+      "departPlaces",
+      "position",
+      "prices",
+      "discount",
+      "tags",
+      "seats",
+      "description",
+      "term",
+      "vehicleId",
+      "slug",
+      "type",
+      "active",
+      "filterId",
+      "frequency",
+      "specialExperience",
+      "additionalPrices",
+      "allowTypePeople",
+    ];
+
+    fields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        tour[field] = req.body[field];
+      }
+    });
+
+    // === 5. Thêm lịch sử updatedBy ===
+    tour.updatedBy.push({
+      _id: new mongoose.Types.ObjectId(decoded.id),
+      at: new Date(),
+    });
+
+    // === 6. Lưu lại ===
+    await tour.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Cập nhật tour thành công",
+      tour,
+    });
+  } catch (err) {
+    console.error("Lỗi khi cập nhật tour:", err);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };

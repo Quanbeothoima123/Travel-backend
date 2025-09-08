@@ -12,4 +12,5 @@ router.post("/generate-tags-ai", controller.generateTagUsingAI);
 router.post("/generate-slug-ai", controller.generateSlugUsingAI);
 router.get("/getTourById/:tourId", controller.getTourById);
 router.get("/delete/:tourId", controller.delete);
+router.patch("/update/:tourId", controller.updateTour);
 module.exports = router;
