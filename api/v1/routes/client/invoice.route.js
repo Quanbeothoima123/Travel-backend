@@ -5,4 +5,5 @@ router.post("/payUsingCash", controller.createInvoice);
 router.post("/pay-with-momo", controller.payWithMomo);
 router.post("/momo-ipn", controller.momoIPN);
 router.get("/:invoiceId", controller.getById);
+router.get("/code/:invoiceCode", controller.getByCode);
 module.exports = router;

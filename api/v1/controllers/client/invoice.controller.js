@@ -2,6 +2,7 @@ const Tour = require("../../models/tour.model");
 const generateInvoiceCode = require("../../../../utils/genCodeInvoice");
 const Invoice = require("../../models/invoice.model");
 const { createMomoPayment } = require("../../../../utils/momo");
+const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = process.env;
 
@@ -220,10 +221,47 @@ module.exports.momoIPN = async (req, res) => {
 
 module.exports.getById = async (req, res) => {
   try {
-    const invoiceId = req.params.invoiceId;
-    const invoice = await Invoice.find({ _id: invoiceId });
+    const { invoiceId } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(invoiceId)) {
+      return res.status(400).json({ message: "Invalid invoiceId" });
+    }
+
+    const invoice = await Invoice.findById(invoiceId)
+      .populate("userId", "fullName email phoneNumber")
+      .populate("tourId", "title thumbnail")
+      .populate("seatFor.typeOfPersonId", "name")
+      .populate("seatAddFor.typeOfPersonId", "name")
+      .populate("province", "name_with_type")
+      .populate("ward", "name_with_type");
+
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
     res.status(200).json(invoice);
   } catch (error) {
+    console.error("Error in getById:", error);
     res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/v1/invoice/code/:invoiceCode
+module.exports.getByCode = async (req, res) => {
+  try {
+    const { invoiceCode } = req.params;
+    const invoice = await Invoice.findOne({ invoiceCode })
+      .populate("userId", "fullName email phoneNumber")
+      .populate("tourId", "title thumbnail")
+      .populate("seatFor.typeOfPersonId", "name")
+      .populate("seatAddFor.typeOfPersonId", "name")
+      .populate("province", "name_with_type")
+      .populate("ward", "name_with_type");
+
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+    res.status(200).json(invoice);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
