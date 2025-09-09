@@ -7,6 +7,7 @@ const frequencyRoute = require("../admin/frequency.route");
 const tourRoute = require("./tour.route");
 const typeOfPersonRoute = require("./type-of-person.route");
 const filterRoute = require("./filter.route");
+const invoiceRoute = require("./invoice.route");
 const adminRoute = require("./admin.route");
 module.exports = (app) => {
   const version = "/api/v1/admin";
@@ -19,5 +20,6 @@ module.exports = (app) => {
   app.use(version + "/tours", tourRoute);
   app.use(version + "/type-of-person", typeOfPersonRoute);
   app.use(version + "/filter", filterRoute);
+  app.use(version + "/invoice", invoiceRoute);
   app.use(version, adminRoute);
 };
