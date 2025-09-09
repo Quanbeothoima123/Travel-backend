@@ -12,6 +12,6 @@ module.exports = (app) => {
   app.use(version, customerConsolationRoute);
   app.use(version + "/wards", wardRoute);
   app.use(version + "/type-of-person", typeOfPersonRoute);
-  app.use(version, invoiceRoute);
+  app.use(version + "/invoice", invoiceRoute);
   app.use(version + "/tours", tourRoutes);
 };

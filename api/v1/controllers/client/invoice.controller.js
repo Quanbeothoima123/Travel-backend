@@ -175,7 +175,7 @@ module.exports.payWithMomo = async (req, res) => {
       orderId: invoice._id.toString(),
       orderInfo: `Thanh toán đơn hàng ${invoiceCode}`,
       redirectUrl: "http://localhost:3000/payment/momo/result",
-      ipnUrl: "https://3f953d48ebe6.ngrok-free.app/api/v1/momo-ipn",
+      ipnUrl: "https://3f953d48ebe6.ngrok-free.app/api/v1/invoice/momo-ipn",
     });
 
     if (momoRes?.payUrl) {
@@ -215,5 +215,15 @@ module.exports.momoIPN = async (req, res) => {
   } catch (error) {
     console.error("IPN error:", error);
     res.status(500).end();
+  }
+};
+
+module.exports.getById = async (req, res) => {
+  try {
+    const invoiceId = req.params.invoiceId;
+    const invoice = await Invoice.find({ _id: invoiceId });
+    res.status(200).json(invoice);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 };
