@@ -178,7 +178,7 @@ module.exports.checkTour = async (req, res) => {
   try {
     const data = req.body;
 
-    // === 1. Check các trường bắt buộc ===
+    // === 1. Check các trường bắt buộc (trừ term, vì check riêng) ===
     const requiredFields = [
       { field: "title", label: "Tên tour" },
       { field: "slug", label: "Slug" },
@@ -198,7 +198,6 @@ module.exports.checkTour = async (req, res) => {
       { field: "images", label: "Thư viện ảnh" },
       { field: "departPlaces", label: "Nơi khởi hành" },
       { field: "tags", label: "Tags" },
-      { field: "term", label: "Điều khoản" },
       { field: "description", label: "Mô tả lịch trình" },
       { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
     ];
@@ -217,21 +216,19 @@ module.exports.checkTour = async (req, res) => {
       }
     }
 
-    // === 1.1 Validate giá trị số ===
+    // === 1.1 Validate số học ===
     if (data.discount < 0 || data.discount > 100) {
       return res.status(400).json({
         success: false,
-        message: `Trường "Giảm giá" phải nằm trong khoảng từ 0% đến 100%`,
+        message: `Trường "Giảm giá" phải nằm trong khoảng 0 - 100`,
       });
     }
-
     if (data.prices < 0) {
       return res.status(400).json({
         success: false,
         message: `Trường "Giá tour" phải >= 0`,
       });
     }
-
     if (data.seats <= 0) {
       return res.status(400).json({
         success: false,
@@ -239,7 +236,7 @@ module.exports.checkTour = async (req, res) => {
       });
     }
 
-    // === 1.2 Check enum cho type ===
+    // === 1.2 Check enum ===
     const allowedTypes = ["domestic", "aboard"];
     if (!allowedTypes.includes(data.type)) {
       return res.status(400).json({
@@ -257,12 +254,13 @@ module.exports.checkTour = async (req, res) => {
       });
     }
 
-    // === 2. Check các ID có tồn tại ===
+    // === 2. Check ID tồn tại ===
     const checkExists = async (Model, id, name) => {
-      if (!mongoose.Types.ObjectId.isValid(id)) {
+      const realId = id && id._id ? id._id : id; // cho phép object { _id, ... }
+      if (!mongoose.Types.ObjectId.isValid(realId)) {
         throw new Error(`"${name}" không hợp lệ`);
       }
-      const exists = await Model.findById(id);
+      const exists = await Model.findById(realId);
       if (!exists) throw new Error(`"${name}" không tồn tại`);
     };
 
@@ -279,11 +277,25 @@ module.exports.checkTour = async (req, res) => {
       await checkExists(Filter, fId, "Bộ lọc");
     }
 
+    // === 3. Check term ===
+    if (!Array.isArray(data.term) || data.term.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Điều khoản" không được để trống`,
+      });
+    }
+
     for (let t of data.term) {
+      if (!t.termId || !t.description || String(t.description).trim() === "") {
+        return res.status(400).json({
+          success: false,
+          message: `Mỗi điều khoản phải có đủ "termId" và "description"`,
+        });
+      }
       await checkExists(Term, t.termId, "Điều khoản");
     }
 
-    // === 3. Check allowTypePeople ===
+    // === 4. Check allowTypePeople ===
     if (Array.isArray(data.allowTypePeople)) {
       for (let pId of data.allowTypePeople) {
         await checkExists(
@@ -294,12 +306,11 @@ module.exports.checkTour = async (req, res) => {
       }
     }
 
-    // === 4. Check additionalPrices ===
+    // === 5. Check additionalPrices ===
     if (
       Array.isArray(data.additionalPrices) &&
       data.additionalPrices.length > 0
     ) {
-      // Bắt buộc phải có allowTypePeople nếu có additionalPrices
       if (
         !Array.isArray(data.allowTypePeople) ||
         data.allowTypePeople.length === 0
@@ -311,50 +322,46 @@ module.exports.checkTour = async (req, res) => {
       }
 
       for (let ap of data.additionalPrices) {
-        // Check id tồn tại
         await checkExists(
           TypeOfPerson,
           ap.typeOfPersonId,
           "Loại khách (phụ thu)"
         );
 
-        // Check phải nằm trong allowTypePeople
-        if (!data.allowTypePeople.includes(ap.typeOfPersonId)) {
+        const realTypeId = ap.typeOfPersonId._id || ap.typeOfPersonId;
+        if (!data.allowTypePeople.includes(realTypeId)) {
           return res.status(400).json({
             success: false,
-            message: `Loại khách ${ap.typeOfPersonId} trong phụ thu không nằm trong danh sách được phép`,
+            message: `Loại khách ${realTypeId} trong phụ thu không nằm trong danh sách được phép`,
           });
         }
 
-        // Check moneyMore hợp lệ
         if (typeof ap.moneyMore !== "number" || ap.moneyMore <= 0) {
           return res.status(400).json({
             success: false,
-            message: `Giá trị phụ thu cho loại khách ${ap.typeOfPersonId} phải là số dương`,
+            message: `Giá trị phụ thu cho loại khách ${realTypeId} phải là số dương`,
           });
         }
       }
     }
 
-    // === 5. Check description ===
+    // === 6. Check description ===
     for (let d of data.description) {
       if (!d.title || !d.image || !d.description) {
         return res.status(400).json({
           success: false,
-          message:
-            "Mỗi ngày trong Mô tả lịch trình phải có đủ Tiêu đề, Ảnh và Nội dung",
+          message: `Mỗi ngày trong "Mô tả lịch trình" phải có đủ Tiêu đề, Ảnh và Nội dung`,
         });
       }
     }
 
-    // === Thành công ===
+    // === OK ===
     return res.json({ success: true, message: "Dữ liệu tour hợp lệ" });
   } catch (err) {
     console.error("Check tour error:", err);
     return res.status(400).json({ success: false, message: err.message });
   }
 };
-
 /**
  * GET /api/v1/tours/countTours
  */
@@ -502,12 +509,10 @@ module.exports.updateTour = async (req, res) => {
     // === 1. Lấy token từ cookie ===
     const token = req.cookies.adminToken;
     if (!token) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: "Không có token, vui lòng đăng nhập",
-        });
+      return res.status(401).json({
+        success: false,
+        message: "Không có token, vui lòng đăng nhập",
+      });
     }
 
     // === 2. Giải mã token ===
