@@ -1,6 +1,8 @@
 const md5 = require("md5");
 const User = require("../../models/user.model");
 const Otp = require("../../models/otp.model"); // nhớ import Otp
+const Ward = require("../../models/ward.model");
+const Province = require("../../models/province.model");
 const sendOtp = require("../../../../helpers/otpGenerator");
 const jwt = require("jsonwebtoken");
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -184,6 +186,7 @@ module.exports.reInfo = async (req, res) => {
   }
 };
 
+// [POST] /api/v1/user/login
 module.exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -221,7 +224,7 @@ module.exports.login = async (req, res) => {
     res.status(500).json({ message: "Lỗi server" });
   }
 };
-
+// [GET] /api/v1/user/me
 module.exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select("fullName email");
@@ -234,4 +237,89 @@ module.exports.getMe = async (req, res) => {
 module.exports.logout = (req, res) => {
   res.clearCookie("authToken");
   return res.json({ message: "Đăng xuất thành công" });
+};
+// [POST] /api/v1/user/user-profile
+module.exports.getUserProfile = async (req, res) => {
+  try {
+    const userId = req.user.userId; // từ token decode
+    const user = await User.findById(userId)
+      .populate("province")
+      .populate("ward")
+      .lean();
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ message: "Có lỗi trong quá trình lấy thông tin" });
+    }
+    const { password, ...rest } = user;
+    res.json(rest);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+// [POST] /api/v1/user/update-profile
+module.exports.updateUserProfile = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      fullName,
+      birthDay,
+      sex,
+      phone,
+      avatar,
+      address,
+      province: provinceId,
+      ward: wardId,
+    } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user)
+      return res.status(404).json({ message: "Người dùng không tồn tại" });
+
+    if (fullName !== undefined) user.fullName = fullName;
+    if (birthDay !== undefined) user.birthDay = new Date(birthDay);
+    if (sex !== undefined) user.sex = sex;
+    if (phone !== undefined) user.phone = phone;
+    if (avatar !== undefined) user.avatar = avatar;
+    if (address !== undefined) user.address = address;
+
+    // Xử lý province & ward
+    if (provinceId) {
+      const province = await Province.findById(provinceId);
+      if (!province)
+        return res.status(400).json({ message: "Tỉnh/Thành không hợp lệ" });
+      user.province = province._id;
+
+      // Nếu ward được gửi
+      if (wardId) {
+        const ward = await Ward.findById(wardId);
+        if (!ward || ward.parent_code !== province.code)
+          return res
+            .status(400)
+            .json({ message: "Phường/Xã không hợp lệ cho tỉnh/thành này" });
+        user.ward = ward._id;
+      } else {
+        user.ward = undefined;
+      }
+    } else if (wardId) {
+      if (!user.province)
+        return res.status(400).json({ message: "Chọn tỉnh/thành trước" });
+      const province = await Province.findById(user.province);
+      const ward = await Ward.findById(wardId);
+      if (!ward || ward.parent_code !== province.code)
+        return res.status(400).json({ message: "Phường/Xã không hợp lệ" });
+      user.ward = ward._id;
+    }
+
+    await user.save();
+
+    const { password, ...rest } = user.toObject();
+    res.json({ message: "Cập nhật thành công", user: rest });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
 };

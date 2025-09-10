@@ -16,5 +16,7 @@ router.post("/login", userValidate.validateLogin, controller.login);
 router.post("/logout", controller.logout);
 
 router.get("/me", checkAuth, controller.getMe);
+router.get("/profile", checkAuth, controller.getUserProfile);
+router.patch("/profile", checkAuth, controller.updateUserProfile);
 
 module.exports = router;

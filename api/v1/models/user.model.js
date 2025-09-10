@@ -9,6 +9,7 @@ const UserSchema = new mongoose.Schema(
     email: String,
     password: String,
     avatar: String,
+    address: String,
     ward: { type: mongoose.Schema.Types.ObjectId, ref: "Ward" },
     province: { type: mongoose.Schema.Types.ObjectId, ref: "Province" },
     status: {
