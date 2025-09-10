@@ -32,7 +32,6 @@ const TourSchema = new mongoose.Schema(
     ],
     term: [
       {
-        index: Number,
         termId: { type: mongoose.Schema.Types.ObjectId, ref: "Term" },
         description: String,
       },
