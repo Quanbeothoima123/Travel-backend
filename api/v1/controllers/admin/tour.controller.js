@@ -92,34 +92,75 @@ module.exports.getTours = async (req, res) => {
   }
 };
 
+// Bulk Update
 module.exports.bulkUpdateTours = async (req, res) => {
   try {
-    const { ids, updateData } = req.body; // ids: [tourId1, tourId2,...]
+    const { ids, set, positions } = req.body;
 
-    if (!ids || !updateData) {
-      return res.status(400).json({ message: "Missing ids or updateData" });
+    if (!ids || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu danh sách ids",
+      });
     }
 
-    await Tour.updateMany({ _id: { $in: ids } }, { $set: updateData });
+    // Nếu có positions → update từng tour
+    if (Array.isArray(positions) && positions.length > 0) {
+      for (const p of positions) {
+        const payload = { ...(set || {}) };
+        if (p.position !== undefined) {
+          payload.position = Number(p.position) || 0;
+        }
+        await Tour.findByIdAndUpdate(p.id, payload);
+      }
+      return res.json({
+        success: true,
+        message: `Đã cập nhật ${positions.length} sản phẩm (có position).`,
+      });
+    }
 
-    res.json({ message: `Đã cập nhật ${ids.length} sản phẩm` });
+    // Nếu chỉ có set → update nhiều tour
+    if (set && Object.keys(set).length > 0) {
+      await Tour.updateMany({ _id: { $in: ids } }, { $set: set });
+      return res.json({
+        success: true,
+        message: `Đã cập nhật ${ids.length} sản phẩm (theo set).`,
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: "Không có dữ liệu để cập nhật",
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
 
+// Update 1 Tour
 module.exports.updateTour = async (req, res) => {
   try {
     const { id } = req.params;
     const updated = await Tour.findByIdAndUpdate(id, req.body, { new: true });
-
     if (!updated) {
-      return res.status(404).json({ message: "Không tìm thấy tour này!" });
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy tour này!",
+      });
     }
-
-    res.json(updated);
+    res.json({
+      success: true,
+      message: "Cập nhật tour thành công",
+      data: updated,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
 
