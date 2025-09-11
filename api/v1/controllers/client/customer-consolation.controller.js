@@ -47,7 +47,7 @@ module.exports.createCustomerConsolation = async (req, res) => {
     }
 
     return res.json({
-      code: 200,
+      success: true,
       message: "Tạo yêu cầu tư vấn thành công",
       data: record,
     });
