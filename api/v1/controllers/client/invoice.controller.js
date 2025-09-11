@@ -5,7 +5,7 @@ const { createMomoPayment } = require("../../../../utils/momo");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = process.env;
-
+const emailService = require("../../../../services/emailService");
 // [POST] /api/v1/invoices
 module.exports.createInvoice = async (req, res) => {
   try {
@@ -222,7 +222,6 @@ module.exports.momoIPN = async (req, res) => {
 module.exports.getById = async (req, res) => {
   try {
     const { invoiceId } = req.params;
-
     // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(invoiceId)) {
       return res.status(400).json({ message: "Invalid invoiceId" });
@@ -263,5 +262,215 @@ module.exports.getByCode = async (req, res) => {
     res.status(200).json(invoice);
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+const buildFullAddress = (address, wardName, provinceName) => {
+  const parts = [address];
+  if (wardName) parts.push(wardName);
+  if (provinceName) parts.push(provinceName);
+  return parts.filter(Boolean).join(", ");
+};
+
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+  }).format(amount);
+};
+
+const formatDate = (date) => {
+  return new Date(date).toLocaleDateString("vi-VN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  });
+};
+
+const getPaymentMethodText = (method) => {
+  const methods = {
+    cash: "Tiền mặt",
+    "bank-transfer": "Chuyển khoản ngân hàng",
+    "credit-card": "Thẻ tín dụng",
+    momo: "MoMo",
+    zalopay: "ZaloPay",
+  };
+  return methods[method] || method;
+};
+
+const getStatusText = (status) => {
+  const statuses = {
+    pending: "Chờ thanh toán",
+    paid: "Đã thanh toán",
+    canceled: "Đã hủy",
+    refunded: "Đã hoàn tiền",
+  };
+  return statuses[status] || status;
+};
+
+const getInvoiceWithDetails = async (orderId) => {
+  return await Invoice.findById(orderId)
+    .populate({
+      path: "tourId",
+      select:
+        "title thumbnail travelTimeId hotelId departPlaces vehicleId frequency",
+      populate: [
+        { path: "travelTimeId", select: "day night" },
+        { path: "hotelId", select: "name star" },
+        { path: "vehicleId", select: "name" },
+        { path: "frequency", select: "title" },
+      ],
+    })
+    .populate({ path: "seatFor.typeOfPersonId", select: "name" })
+    .populate({ path: "seatAddFor.typeOfPersonId", select: "name" })
+    .populate({ path: "province", select: "name_with_type" })
+    .populate({ path: "ward", select: "name_with_type" });
+};
+
+const processInvoiceData = (invoice) => {
+  const fullAddress = buildFullAddress(
+    invoice.address,
+    invoice.ward?.name_with_type,
+    invoice.province?.name_with_type
+  );
+
+  const seatForWithPrice = invoice.seatFor.map((seat) => ({
+    typeOfPersonName: seat.typeOfPersonId?.name || "N/A",
+    quantity: seat.quantity,
+    price: invoice.discountedBase,
+    typeOfPersonId: seat.typeOfPersonId?._id,
+  }));
+
+  const seatAddForWithPrice = invoice.seatAddFor.map((seat) => ({
+    typeOfPersonName: seat.typeOfPersonId?.name || "N/A",
+    quantity: seat.quantity,
+    moneyMoreForOne: seat.moneyMoreForOne,
+    typeOfPersonId: seat.typeOfPersonId?._id,
+  }));
+
+  return {
+    invoiceCode: invoice.invoiceCode,
+    nameOfUser: invoice.nameOfUser,
+    email: invoice.email,
+    phoneNumber: invoice.phoneNumber,
+    fullAddress,
+    tourTitle: invoice.tourId?.title || "N/A",
+    departureDate: invoice.departureDate,
+    totalPeople: invoice.totalPeople,
+    totalPrice: invoice.totalPrice,
+    typeOfPayment: invoice.typeOfPayment,
+    status: invoice.status,
+    seatFor: seatForWithPrice,
+    seatAddFor: seatAddForWithPrice,
+    note: invoice.note,
+  };
+};
+
+const generateInvoiceEmailTemplate = (data) => {
+  const {
+    invoiceCode,
+    nameOfUser,
+    email,
+    phoneNumber,
+    fullAddress,
+    tourTitle,
+    departureDate,
+    totalPeople,
+    totalPrice,
+    typeOfPayment,
+    status,
+    seatFor,
+    seatAddFor,
+    note,
+  } = data;
+
+  return `
+    <html>
+      <body>
+        <h1>HÓA ĐƠN TOUR DU LỊCH</h1>
+        <p>Mã hóa đơn: ${invoiceCode}</p>
+        <p>Khách hàng: ${nameOfUser} - ${email} - ${phoneNumber}</p>
+        <p>Địa chỉ: ${fullAddress}</p>
+        <p>Tour: ${tourTitle}</p>
+        <p>Ngày khởi hành: ${formatDate(departureDate)}</p>
+        <p>Tổng số người: ${totalPeople}</p>
+        <p>Trạng thái: ${getStatusText(status)}</p>
+        <p>Thanh toán: ${getPaymentMethodText(typeOfPayment)}</p>
+        <p>Tổng tiền: ${formatCurrency(totalPrice)}</p>
+        ${note ? `<p>Ghi chú: ${note}</p>` : ""}
+        <h3>Chi tiết hành khách:</h3>
+        <ul>
+          ${seatFor
+            .map(
+              (s) =>
+                `<li>${s.typeOfPersonName}: ${s.quantity} x ${formatCurrency(
+                  s.price
+                )}</li>`
+            )
+            .join("")}
+          ${seatAddFor
+            .map(
+              (s) =>
+                `<li>${s.typeOfPersonName} (Phụ thu): ${
+                  s.quantity
+                } x ${formatCurrency(s.moneyMoreForOne)}</li>`
+            )
+            .join("")}
+        </ul>
+      </body>
+    </html>
+  `;
+};
+
+module.exports.sendInvoiceEmail = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+
+    if (!invoiceId) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu invoiceId trong query params",
+      });
+    }
+
+    const invoice = await getInvoiceWithDetails(invoiceId);
+
+    if (!invoice) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy hóa đơn" });
+    }
+
+    const emailData = processInvoiceData(invoice);
+    const htmlContent = generateInvoiceEmailTemplate(emailData);
+    const subject = `🎫 Hóa đơn tour ${emailData.tourTitle} - ${emailData.invoiceCode}`;
+
+    const emailResult = await emailService.sendEmail(
+      invoice.email,
+      subject,
+      htmlContent
+    );
+
+    if (emailResult.success) {
+      return res.status(200).json({
+        success: true,
+        message: `Đã gửi hóa đơn đến ${invoice.email}`,
+        data: {
+          messageId: emailResult.messageId,
+          invoiceCode: invoice.invoiceCode,
+        },
+      });
+    } else {
+      return res
+        .status(500)
+        .json({ success: false, message: emailResult.message });
+    }
+  } catch (error) {
+    console.error("❌ Error sendInvoiceEmail:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server khi gửi email hóa đơn",
+    });
   }
 };
