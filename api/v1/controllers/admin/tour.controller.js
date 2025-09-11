@@ -115,7 +115,7 @@ module.exports.bulkUpdateTours = async (req, res) => {
       }
       return res.json({
         success: true,
-        message: `Đã cập nhật ${positions.length} sản phẩm (có position).`,
+        message: `Đã cập nhật ${positions.length} sản phẩm(Có cập nhật vị trí).`,
       });
     }
 
@@ -124,7 +124,7 @@ module.exports.bulkUpdateTours = async (req, res) => {
       await Tour.updateMany({ _id: { $in: ids } }, { $set: set });
       return res.json({
         success: true,
-        message: `Đã cập nhật ${ids.length} sản phẩm (theo set).`,
+        message: `Đã cập nhật ${ids.length} sản phẩm.`,
       });
     }
 
