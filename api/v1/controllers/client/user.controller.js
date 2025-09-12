@@ -238,7 +238,7 @@ module.exports.logout = (req, res) => {
   res.clearCookie("authToken");
   return res.json({ message: "Đăng xuất thành công" });
 };
-// [POST] /api/v1/user/user-profile
+// [GET] /api/v1/user/user-profile
 module.exports.getUserProfile = async (req, res) => {
   try {
     const userId = req.user.userId; // từ token decode
@@ -271,14 +271,15 @@ module.exports.updateUserProfile = async (req, res) => {
       phone,
       avatar,
       address,
-      province: provinceId,
-      ward: wardId,
+      province, // Object: {code, name, _id, ...}
+      ward, // Object: {code, name, _id, ...}
     } = req.body;
 
     const user = await User.findById(userId);
     if (!user)
       return res.status(404).json({ message: "Người dùng không tồn tại" });
 
+    // Cập nhật các field cơ bản
     if (fullName !== undefined) user.fullName = fullName;
     if (birthDay !== undefined) user.birthDay = new Date(birthDay);
     if (sex !== undefined) user.sex = sex;
@@ -286,38 +287,45 @@ module.exports.updateUserProfile = async (req, res) => {
     if (avatar !== undefined) user.avatar = avatar;
     if (address !== undefined) user.address = address;
 
-    // Xử lý province & ward
-    if (provinceId) {
-      const province = await Province.findById(provinceId);
-      if (!province)
+    // Xử lý province - nhận object từ frontend
+    if (province && province._id) {
+      const provinceDoc = await Province.findById(province._id);
+      if (!provinceDoc)
         return res.status(400).json({ message: "Tỉnh/Thành không hợp lệ" });
-      user.province = province._id;
+      user.province = provinceDoc._id;
 
-      // Nếu ward được gửi
-      if (wardId) {
-        const ward = await Ward.findById(wardId);
-        if (!ward || ward.parent_code !== province.code)
-          return res
-            .status(400)
-            .json({ message: "Phường/Xã không hợp lệ cho tỉnh/thành này" });
-        user.ward = ward._id;
-      } else {
+      // Reset ward khi đổi province
+      if (!ward || ward.parent_code !== provinceDoc.code) {
         user.ward = undefined;
       }
-    } else if (wardId) {
-      if (!user.province)
-        return res.status(400).json({ message: "Chọn tỉnh/thành trước" });
-      const province = await Province.findById(user.province);
-      const ward = await Ward.findById(wardId);
-      if (!ward || ward.parent_code !== province.code)
+    }
+
+    // Xử lý ward - nhận object từ frontend
+    if (ward && ward._id && user.province) {
+      const wardDoc = await Ward.findById(ward._id);
+      if (!wardDoc)
         return res.status(400).json({ message: "Phường/Xã không hợp lệ" });
-      user.ward = ward._id;
+
+      // Kiểm tra ward có thuộc province không
+      const provinceDoc = await Province.findById(user.province);
+      if (wardDoc.parent_code !== provinceDoc.code)
+        return res.status(400).json({
+          message: "Phường/Xã không thuộc tỉnh/thành đã chọn",
+        });
+
+      user.ward = wardDoc._id;
     }
 
     await user.save();
 
-    const { password, ...rest } = user.toObject();
-    res.json({ message: "Cập nhật thành công", user: rest });
+    // Populate để trả về full data như GET API
+    const updatedUser = await User.findById(userId)
+      .populate("province")
+      .populate("ward")
+      .select("-password");
+
+    // QUAN TRỌNG: Trả về user object trực tiếp
+    res.json(updatedUser);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Lỗi server" });
