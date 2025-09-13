@@ -8,6 +8,7 @@ const Frequency = require("../../models/frequency.model");
 const TypeOfPerson = require("../../models/type-of-person.model");
 const Term = require("../../models/term.model");
 const Filter = require("../../models/filter.model");
+const DepartPlace = require("../../models/depart-place.model");
 const { generateTagsAI } = require("../../../../services/tagService");
 const { generateSlug } = require("../../../../services/slugService");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
@@ -237,13 +238,16 @@ module.exports.checkTour = async (req, res) => {
       { field: "position", label: "Vị trí" },
       { field: "thumbnail", label: "Ảnh bìa" },
       { field: "images", label: "Thư viện ảnh" },
-      { field: "departPlaces", label: "Nơi khởi hành" },
+      { field: "departPlaceId", label: "Nơi khởi hành" },
       { field: "tags", label: "Tags" },
       { field: "description", label: "Mô tả lịch trình" },
       { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
     ];
 
     for (let { field, label } of requiredFields) {
+      if (label === "Bộ lọc") {
+        console.log(data[field]);
+      }
       if (
         data[field] === undefined ||
         data[field] === null ||
@@ -297,7 +301,7 @@ module.exports.checkTour = async (req, res) => {
 
     // === 2. Check ID tồn tại ===
     const checkExists = async (Model, id, name) => {
-      const realId = id && id._id ? id._id : id; // cho phép object { _id, ... }
+      const realId = id && id._id ? id._id : id;
       if (!mongoose.Types.ObjectId.isValid(realId)) {
         throw new Error(`"${name}" không hợp lệ`);
       }
@@ -317,6 +321,8 @@ module.exports.checkTour = async (req, res) => {
     for (let fId of data.filterId) {
       await checkExists(Filter, fId, "Bộ lọc");
     }
+
+    await checkExists(DepartPlace, data.departPlaceId, "Nơi khởi hành");
 
     // === 3. Check term ===
     if (!Array.isArray(data.term) || data.term.length === 0) {
@@ -388,10 +394,10 @@ module.exports.checkTour = async (req, res) => {
 
     // === 6. Check description ===
     for (let d of data.description) {
-      if (!d.title || !d.image || !d.description) {
+      if (!d.day || !d.title || !d.image || !d.description) {
         return res.status(400).json({
           success: false,
-          message: `Mỗi ngày trong "Mô tả lịch trình" phải có đủ Tiêu đề, Ảnh và Nội dung`,
+          message: `Mỗi ngày trong "Mô tả lịch trình" phải có đủ Ngày, Tiêu đề, Ảnh và Nội dung`,
         });
       }
     }
@@ -403,6 +409,7 @@ module.exports.checkTour = async (req, res) => {
     return res.status(400).json({ success: false, message: err.message });
   }
 };
+
 /**
  * GET /api/v1/tours/countTours
  */
@@ -453,7 +460,7 @@ module.exports.generateSlugUsingAI = async (req, res) => {
   }
 };
 /**
- * GET /api/v1/tours/admin/getTourById
+ * GET /api/v1/admin/tours/getTourById
  */
 
 module.exports.getTourById = async (req, res) => {
@@ -468,22 +475,28 @@ module.exports.getTourById = async (req, res) => {
         "name thumbnail images description price discount star"
       )
       .populate("vehicleId", "name image")
-      .populate("filter", "label value")
+      .populate("filterId", "label value")
       .populate("frequency", "title")
       .populate("term.termId", "title icon")
+      .populate("allowTypePeople", "name")
+      .populate("departPlaceId", "name googleDirection") // ✅ thêm chỗ này
       .populate("createdBy._id", "fullName")
       .populate("deletedBy._id", "fullName")
       .populate("updatedBy._id", "fullName")
       .lean();
 
     if (!tour) {
-      return res.status(404).json({ message: "Tour not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy thông tin của tour" });
     }
 
     res.status(200).json(tour);
   } catch (error) {
-    console.error("Error fetching tour:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Lỗi không tải được tour:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", error: error.message });
   }
 };
 
@@ -545,7 +558,7 @@ module.exports.delete = async (req, res) => {
  * GET /api/v1/admin/tours/update/:tourId
  */
 
-module.exports.updateTour = async (req, res) => {
+module.exports.editTour = async (req, res) => {
   try {
     // === 1. Lấy token từ cookie ===
     const token = req.cookies.adminToken;
@@ -584,7 +597,7 @@ module.exports.updateTour = async (req, res) => {
       "images",
       "travelTimeId",
       "hotelId",
-      "departPlaces",
+      "departPlaceId",
       "position",
       "prices",
       "discount",

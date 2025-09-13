@@ -4,7 +4,7 @@ const controller = require("../../controllers/admin/tour.controller");
 const validate = require("../../../../validates/admin/tour.validate");
 router.get("/get-all-tour", controller.getTours);
 router.patch("/bulk-update", controller.bulkUpdateTours);
-router.patch("/tour/:id", controller.updateTour);
+router.patch("/update-status-single/:id", controller.updateTour);
 router.post("/create", validate.validateCreateTour, controller.createTour);
 router.post("/check-info-tour-create", controller.checkTour);
 router.get("/countTours", controller.countTours);
@@ -12,5 +12,9 @@ router.post("/generate-tags-ai", controller.generateTagUsingAI);
 router.post("/generate-slug-ai", controller.generateSlugUsingAI);
 router.get("/getTourById/:tourId", controller.getTourById);
 router.get("/delete/:tourId", controller.delete);
-router.patch("/update/:tourId", controller.updateTour);
+router.patch(
+  "/update/:tourId",
+  validate.validateUpdateTour,
+  controller.editTour
+);
 module.exports = router;
