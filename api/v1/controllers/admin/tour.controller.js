@@ -180,7 +180,7 @@ module.exports.createTour = async (req, res) => {
     // Giải mã token
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET); // nhớ để secret trong .env
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
       return res.status(403).json({ message: "Token không hợp lệ" });
     }
