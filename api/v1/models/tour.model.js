@@ -13,10 +13,7 @@ const TourSchema = new mongoose.Schema(
     ],
     travelTimeId: { type: mongoose.Schema.Types.ObjectId, ref: "TravelTime" },
     hotelId: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel" },
-    departPlaces: {
-      place: String,
-      googleMap: String,
-    },
+    departPlaceId: { type: mongoose.Schema.Types.ObjectId, ref: "DepartPlace" },
     position: Number,
     prices: Number,
     discount: Number,
