@@ -1,9 +1,9 @@
 const Tour = require("../../models/tour.model");
 const generateInvoiceCode = require("../../../../utils/genCodeInvoice");
 const Invoice = require("../../models/invoice.model");
-const { createMomoPayment } = require("../../../../utils/momo");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
+const { createMomoPayment } = require("../../../../utils/momo");
 const { JWT_SECRET } = process.env;
 const emailService = require("../../../../services/emailService");
 // [POST] /api/v1/invoices
@@ -471,6 +471,302 @@ module.exports.sendInvoiceEmail = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Lỗi server khi gửi email hóa đơn",
+    });
+  }
+};
+
+// GET /api/v1/invoice?typeOfPayment=cash&page=1&limit=10
+
+module.exports.getInvoices = async (req, res) => {
+  try {
+    // 1. Lấy userId từ token
+    const authToken = req.cookies.authToken;
+    if (!authToken) {
+      return res.status(401).json({
+        success: false,
+        message: "Vui lòng đăng nhập lại.",
+      });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(authToken, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({
+        success: false,
+        message: "Token không hợp lệ hoặc hết hạn.",
+      });
+    }
+
+    const currentUserId = decoded.userId;
+
+    // 2. Lấy params từ query
+    const {
+      typeOfPayment = "momo",
+      status,
+      minPrice,
+      maxPrice,
+      startDate,
+      endDate,
+      search,
+      searchTour,
+      categoryId,
+      tourType,
+      page = 1,
+      limit = 10,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = req.query;
+
+    // 3. Xây filter
+    const filter = { userId: currentUserId };
+
+    if (typeOfPayment) filter.typeOfPayment = typeOfPayment;
+    if (status) filter.status = status;
+
+    if (minPrice || maxPrice) {
+      filter.totalPrice = {};
+      if (minPrice) filter.totalPrice.$gte = Number(minPrice);
+      if (maxPrice) filter.totalPrice.$lte = Number(maxPrice);
+    }
+
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) {
+        const d = new Date(endDate);
+        d.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = d;
+      }
+    }
+
+    if (search) {
+      filter.$or = [
+        { invoiceCode: { $regex: search, $options: "i" } },
+        { nameOfUser: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // 4. Query database với populate để lấy tour và category
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+
+    const totalDocuments = await Invoice.countDocuments(filter);
+    const totalPages = Math.ceil(totalDocuments / limitNum);
+
+    // TourId có thể bị null vì có thể đã bị xóa trong bảng dữ liệu
+    const invoices = await Invoice.find(filter)
+      .populate({
+        path: "tourId",
+        match: {
+          ...(categoryId && { categoryId }),
+          ...(tourType && { type: tourType }),
+          ...(searchTour && { title: { $regex: searchTour, $options: "i" } }),
+        },
+        populate: { path: "categoryId" },
+      })
+      .populate("userId")
+      .sort({ [sortBy]: sortOrder === "desc" ? -1 : 1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum);
+
+    return res.status(200).json({
+      success: true,
+      message: "Lấy danh sách hóa đơn thành công",
+      data: {
+        invoices,
+        pagination: {
+          currentPage: pageNum,
+          totalPages,
+          totalDocuments,
+          hasNextPage: pageNum < totalPages,
+          hasPrevPage: pageNum > 1,
+          limit: limitNum,
+        },
+      },
+    });
+  } catch (err) {
+    console.error("Error in getInvoices:", err);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: err.message,
+    });
+  }
+};
+
+// GET /api/v1/invoice/statistics - Thống kê tổng quan
+module.exports.getInvoiceStatistics = async (req, res) => {
+  try {
+    const { startDate, endDate, typeOfPayment } = req.query;
+
+    // Tạo filter cho thời gian
+    const dateFilter = {};
+    if (startDate || endDate) {
+      dateFilter.createdAt = {};
+      if (startDate) {
+        dateFilter.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        dateFilter.createdAt.$lte = new Date(endDate);
+      }
+    }
+
+    // Filter theo payment type nếu có
+    const paymentFilter = typeOfPayment ? { typeOfPayment } : {};
+
+    const matchFilter = { ...dateFilter, ...paymentFilter };
+
+    // Thống kê tổng quan
+    const overallStats = await Invoice.aggregate([
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: null,
+          totalInvoices: { $sum: 1 },
+          totalRevenue: { $sum: "$totalPrice" },
+          totalPeople: { $sum: "$totalPeople" },
+          avgOrderValue: { $avg: "$totalPrice" },
+        },
+      },
+    ]);
+
+    // Thống kê theo status
+    const statusStats = await Invoice.aggregate([
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          totalAmount: { $sum: "$totalPrice" },
+        },
+      },
+    ]);
+
+    // Thống kê theo payment type
+    const paymentStats = await Invoice.aggregate([
+      { $match: dateFilter }, // Chỉ filter theo ngày, không filter payment type
+      {
+        $group: {
+          _id: "$typeOfPayment",
+          count: { $sum: 1 },
+          totalAmount: { $sum: "$totalPrice" },
+        },
+      },
+    ]);
+
+    // Thống kê theo tháng (12 tháng gần nhất)
+    const monthlyStats = await Invoice.aggregate([
+      {
+        $match: {
+          ...paymentFilter,
+          createdAt: {
+            $gte: new Date(
+              new Date().setFullYear(new Date().getFullYear() - 1)
+            ),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+          },
+          count: { $sum: 1 },
+          totalAmount: { $sum: "$totalPrice" },
+          totalPeople: { $sum: "$totalPeople" },
+        },
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1 },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Lấy thống kê thành công",
+      data: {
+        overall: overallStats[0] || {
+          totalInvoices: 0,
+          totalRevenue: 0,
+          totalPeople: 0,
+          avgOrderValue: 0,
+        },
+        byStatus: statusStats,
+        byPaymentType: paymentStats,
+        monthly: monthlyStats,
+        filters: {
+          startDate,
+          endDate,
+          typeOfPayment,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error in getInvoiceStatistics:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server khi lấy thống kê",
+      error: error.message,
+    });
+  }
+};
+
+// PATCH /api/v1/invoice/:id/status - Cập nhật status của invoice
+module.exports.updateInvoiceStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, note } = req.body;
+
+    // Validate status
+    const validStatuses = ["pending", "paid", "canceled", "refunded"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Trạng thái không hợp lệ",
+      });
+    }
+
+    const updateData = { status };
+
+    // Nếu status là paid, cập nhật datePayment
+    if (status === "paid") {
+      updateData.datePayment = new Date();
+      updateData.isPaid = true;
+    }
+
+    // Thêm note nếu có
+    if (note) {
+      updateData.note = note;
+    }
+
+    const updatedInvoice = await Invoice.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    })
+      .populate("tourId", "title")
+      .populate("userId", "fullName email");
+
+    if (!updatedInvoice) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hóa đơn",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Cập nhật trạng thái hóa đơn thành ${status} thành công`,
+      data: updatedInvoice,
+    });
+  } catch (error) {
+    console.error("Error in updateInvoiceStatus:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server khi cập nhật trạng thái hóa đơn",
+      error: error.message,
     });
   }
 };
