@@ -1,6 +1,7 @@
 const Tour = require("../../models/tour.model");
 const generateInvoiceCode = require("../../../../utils/genCodeInvoice");
 const Invoice = require("../../models/invoice.model");
+const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const { createMomoPayment } = require("../../../../utils/momo");
@@ -519,7 +520,7 @@ module.exports.getInvoices = async (req, res) => {
     } = req.query;
 
     // 3. Filter Invoice
-    const filter = { userId: currentUserId };
+    const filter = { userId: new mongoose.Types.ObjectId(currentUserId) };
 
     if (typeOfPayment) filter.typeOfPayment = typeOfPayment;
     if (status) filter.status = status;
@@ -548,43 +549,77 @@ module.exports.getInvoices = async (req, res) => {
       ];
     }
 
-    // 4. Query database
+    // 4. Chuẩn bị match cho tourId
+    let categoryIds = null;
+    if (categoryId) {
+      const descendantIds = await getAllDescendantIds(categoryId);
+      categoryIds = [categoryId, ...descendantIds];
+    }
+
+    const tourMatch = {
+      ...(categoryIds && {
+        categoryId: {
+          $in: categoryIds.map((id) => new mongoose.Types.ObjectId(id)),
+        },
+      }),
+      ...(tourType && { type: tourType }),
+      ...(searchTour && { title: { $regex: searchTour, $options: "i" } }),
+      ...(departPlaceId && {
+        departPlaceId: new mongoose.Types.ObjectId(departPlaceId),
+      }),
+    };
+
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
 
-    const totalDocuments = await Invoice.countDocuments(filter);
+    // 5. Aggregate query
+    const pipeline = [
+      { $match: filter },
+      {
+        $lookup: {
+          from: "tours",
+          localField: "tourId",
+          foreignField: "_id",
+          as: "tourId",
+          pipeline: [
+            { $match: tourMatch },
+            {
+              $project: {
+                _id: 1,
+                title: 1,
+                thumbnail: 1,
+                slug: 1,
+                type: 1,
+                categoryId: 1,
+                departPlaceId: 1,
+              },
+            },
+          ],
+        },
+      },
+      { $unwind: "$tourId" }, // loại bỏ invoice không có tour
+    ];
+
+    // 6. Copy pipeline để đếm tổng
+    const countPipeline = [...pipeline, { $count: "total" }];
+
+    const totalResult = await Invoice.aggregate(countPipeline);
+    const totalDocuments = totalResult.length > 0 ? totalResult[0].total : 0;
     const totalPages = Math.ceil(totalDocuments / limitNum);
 
-    const invoices = await Invoice.find(filter)
-      .select(
-        "invoiceCode totalPrice createdAt totalPeople status typeOfPayment tourId"
-      ) // chỉ lấy trường cần thiết
-      .populate({
-        path: "tourId",
-        match: {
-          ...(categoryId && { categoryId }),
-          ...(tourType && { type: tourType }),
-          ...(searchTour && { title: { $regex: searchTour, $options: "i" } }),
-          ...(departPlaceId && { departPlaceId }),
-        },
-        select: "title thumbnail slug type categoryId departPlaceId",
-        populate: [
-          { path: "categoryId", select: "_id" },
-          { path: "departPlaceId", select: "_id" },
-        ],
-      })
-      .sort({ [sortBy]: sortOrder === "desc" ? -1 : 1 })
-      .skip((pageNum - 1) * limitNum)
-      .limit(limitNum);
+    // 7. Thêm sort + pagination
+    pipeline.push({ $sort: { [sortBy]: sortOrder === "desc" ? -1 : 1 } });
+    pipeline.push({ $skip: (pageNum - 1) * limitNum });
+    pipeline.push({ $limit: limitNum });
 
-    // 5. Loại bỏ invoice có tourId null (do populate + match)
-    const filteredInvoices = invoices.filter((inv) => inv.tourId !== null);
+    const invoices = await Invoice.aggregate(pipeline);
 
+    // 8. Trả về kết quả
     return res.status(200).json({
       success: true,
       message: "Lấy danh sách hóa đơn thành công",
       data: {
-        invoices: filteredInvoices,
+        invoices,
         pagination: {
           currentPage: pageNum,
           totalPages,
