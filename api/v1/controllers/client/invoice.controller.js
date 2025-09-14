@@ -476,7 +476,6 @@ module.exports.sendInvoiceEmail = async (req, res) => {
 };
 
 // GET /api/v1/invoice?typeOfPayment=cash&page=1&limit=10
-
 module.exports.getInvoices = async (req, res) => {
   try {
     // 1. Lấy userId từ token
@@ -500,9 +499,9 @@ module.exports.getInvoices = async (req, res) => {
 
     const currentUserId = decoded.userId;
 
-    // 2. Lấy params từ query
+    // 2. Params lọc
     const {
-      typeOfPayment = "momo",
+      typeOfPayment,
       status,
       minPrice,
       maxPrice,
@@ -512,13 +511,14 @@ module.exports.getInvoices = async (req, res) => {
       searchTour,
       categoryId,
       tourType,
+      departPlaceId,
       page = 1,
       limit = 10,
       sortBy = "createdAt",
       sortOrder = "desc",
     } = req.query;
 
-    // 3. Xây filter
+    // 3. Filter Invoice
     const filter = { userId: currentUserId };
 
     if (typeOfPayment) filter.typeOfPayment = typeOfPayment;
@@ -548,34 +548,43 @@ module.exports.getInvoices = async (req, res) => {
       ];
     }
 
-    // 4. Query database với populate để lấy tour và category
+    // 4. Query database
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
 
     const totalDocuments = await Invoice.countDocuments(filter);
     const totalPages = Math.ceil(totalDocuments / limitNum);
 
-    // TourId có thể bị null vì có thể đã bị xóa trong bảng dữ liệu
     const invoices = await Invoice.find(filter)
+      .select(
+        "invoiceCode totalPrice createdAt totalPeople status typeOfPayment tourId"
+      ) // chỉ lấy trường cần thiết
       .populate({
         path: "tourId",
         match: {
           ...(categoryId && { categoryId }),
           ...(tourType && { type: tourType }),
           ...(searchTour && { title: { $regex: searchTour, $options: "i" } }),
+          ...(departPlaceId && { departPlaceId }),
         },
-        populate: { path: "categoryId" },
+        select: "title thumbnail slug type categoryId departPlaceId",
+        populate: [
+          { path: "categoryId", select: "_id" },
+          { path: "departPlaceId", select: "_id" },
+        ],
       })
-      .populate("userId")
       .sort({ [sortBy]: sortOrder === "desc" ? -1 : 1 })
       .skip((pageNum - 1) * limitNum)
       .limit(limitNum);
+
+    // 5. Loại bỏ invoice có tourId null (do populate + match)
+    const filteredInvoices = invoices.filter((inv) => inv.tourId !== null);
 
     return res.status(200).json({
       success: true,
       message: "Lấy danh sách hóa đơn thành công",
       data: {
-        invoices,
+        invoices: filteredInvoices,
         pagination: {
           currentPage: pageNum,
           totalPages,
