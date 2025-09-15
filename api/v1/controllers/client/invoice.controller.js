@@ -230,7 +230,7 @@ module.exports.getById = async (req, res) => {
 
     const invoice = await Invoice.findById(invoiceId)
       .populate("userId", "fullName email phoneNumber")
-      .populate("tourId", "title thumbnail")
+      .populate("tourId", "title thumbnail slug")
       .populate("seatFor.typeOfPersonId", "name")
       .populate("seatAddFor.typeOfPersonId", "name")
       .populate("province", "name_with_type")
