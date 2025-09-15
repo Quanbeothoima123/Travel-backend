@@ -73,7 +73,11 @@ const InvoiceSchema = new mongoose.Schema(
       enum: ["pending", "paid", "canceled", "refunded"],
       default: "pending",
     },
-
+    tourStatus: {
+      type: String,
+      enum: ["not-started", "on-tour", "completed", "no-show"],
+      default: "not-started",
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "AdminAccount",
