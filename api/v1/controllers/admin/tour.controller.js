@@ -479,7 +479,7 @@ module.exports.getTourById = async (req, res) => {
       .populate("frequency", "title")
       .populate("term.termId", "title icon")
       .populate("allowTypePeople", "name")
-      .populate("departPlaceId", "name googleDirection") // ✅ thêm chỗ này
+      .populate("departPlaceId", "name googleDirection description")
       .populate("createdBy._id", "fullName")
       .populate("deletedBy._id", "fullName")
       .populate("updatedBy._id", "fullName")
