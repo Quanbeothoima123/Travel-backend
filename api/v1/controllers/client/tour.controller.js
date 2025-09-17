@@ -155,6 +155,7 @@ module.exports.detailTour = async (req, res) => {
       .populate("travelTimeId", "day night")
       .populate("hotelId", "name thumbnail star")
       .populate("vehicleId", "name image")
+      .populate("departPlaceId", "name description googleDirection")
       .populate("frequency", "title")
       .populate("term.termId", "title icon")
       .populate("additionalPrices.typeOfPersonId", "name")

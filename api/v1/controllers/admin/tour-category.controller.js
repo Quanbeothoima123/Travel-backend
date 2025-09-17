@@ -232,17 +232,21 @@ exports.deleteCategory = async (req, res) => {
     }
 
     const ids = Array.from(toDelete);
-    const result = await TourCategory.updateMany(
+    await TourCategory.updateMany(
       { _id: { $in: ids } },
       { $set: { deleted: true, deletedAt: new Date() } }
     );
 
     res.json({
+      success: true,
       message: "Đã xóa (soft) danh mục và con của nó",
-      count: result.nModified || result.modifiedCount || ids.length,
     });
   } catch (error) {
     console.error("deleteCategory error:", error);
-    res.status(500).json({ message: "Lỗi xóa danh mục", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Lỗi xóa danh mục",
+      error: error.message,
+    });
   }
 };

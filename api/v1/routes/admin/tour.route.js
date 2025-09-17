@@ -11,7 +11,7 @@ router.get("/countTours", controller.countTours);
 router.post("/generate-tags-ai", controller.generateTagUsingAI);
 router.post("/generate-slug-ai", controller.generateSlugUsingAI);
 router.get("/getTourById/:tourId", controller.getTourById);
-router.get("/delete/:tourId", controller.delete);
+router.delete("/delete/:tourId", controller.delete);
 router.patch(
   "/update/:tourId",
   validate.validateUpdateTour,
