@@ -3,6 +3,8 @@ const Tour = require("../../models/tour.model");
 const Vehicle = require("../../models/vehicle.model");
 const TravelTime = require("../../models/travel-time.model");
 const Frequency = require("../../models/frequency.model");
+const Filter = require("../../models/filter.model");
+const DepartPlace = require("../../models/depart-place.model");
 const Hotel = require("../../models/hotel.model");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 module.exports.getAllTour = async (req, res) => {
@@ -42,6 +44,34 @@ module.exports.searchTour = async (req, res) => {
   }
 };
 
+module.exports.detailTour = async (req, res) => {
+  try {
+    const slug = req.params.slug;
+
+    const tourDetail = await Tour.findOne({ slug })
+      .select("-createdAt -updatedAt -__v")
+      .populate("categoryId", "title slug")
+      .populate("travelTimeId", "day night")
+      .populate("hotelId", "name thumbnail star")
+      .populate("vehicleId", "name image")
+      .populate("departPlaceId", "name description googleDirection")
+      .populate("frequency", "title")
+      .populate("term.termId", "title icon")
+      .populate("additionalPrices.typeOfPersonId", "name")
+      .populate("allowTypePeople", "name")
+      .lean();
+
+    if (!tourDetail) {
+      return res.status(404).json({ message: "Tour not found" });
+    }
+
+    res.json({ tourDetail });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
 // [GET] /api/v1/tours/search-combined
 module.exports.searchToursCombined = async (req, res) => {
   try {
@@ -64,7 +94,6 @@ module.exports.searchToursCombined = async (req, res) => {
       filter.categoryId = { $in: allCategoryIds };
     }
 
-    // ✅ Thêm query filter nếu có
     let queryFilter = {};
     if (query) {
       const regex = new RegExp(query.trim().split(/\s+/).join(".*"), "i");
@@ -145,30 +174,186 @@ module.exports.searchToursCombined = async (req, res) => {
   }
 };
 
-module.exports.detailTour = async (req, res) => {
+// Lấy danh sách tour theo category.slug (bao gồm category con)
+module.exports.tourListByCategory = async (req, res) => {
   try {
     const slug = req.params.slug;
 
-    const tourDetail = await Tour.findOne({ slug })
-      .select("-createdAt -updatedAt -__v")
-      .populate("categoryId", "title slug")
-      .populate("travelTimeId", "day night")
-      .populate("hotelId", "name thumbnail star")
-      .populate("vehicleId", "name image")
-      .populate("departPlaceId", "name description googleDirection")
-      .populate("frequency", "title")
-      .populate("term.termId", "title icon")
-      .populate("additionalPrices.typeOfPersonId", "name")
-      .populate("allowTypePeople", "name") // 👈 thêm populate cho loại người tham gia
-      .lean();
-
-    if (!tourDetail) {
-      return res.status(404).json({ message: "Tour not found" });
+    // tìm category gốc theo slug
+    const rootCategory = await TourCategory.findOne({ slug }).lean();
+    if (!rootCategory) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy tour có danh mục này" });
     }
 
-    res.json({ tourDetail });
+    // lấy tất cả category con
+    const childIds = await getAllDescendantIds(rootCategory._id);
+    const allCategoryIds = [
+      rootCategory._id.toString(),
+      ...childIds.map((id) => id.toString()),
+    ];
+
+    // query tour + populate
+    const tourList = await Tour.find({
+      categoryId: { $in: allCategoryIds },
+    })
+      .select(
+        "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type"
+      )
+      .populate({
+        path: "travelTimeId",
+        select: "day night", // chỉ lấy field cần thiết
+      })
+      .populate({
+        path: "vehicleId",
+        select: "name", // lấy tên vehicle
+      })
+      .populate({
+        path: "frequency",
+        select: "title",
+      })
+      .populate({
+        path: "hotelId",
+        select: "star",
+      })
+      .lean();
+
+    // map lại cho đúng structure mong muốn
+    const formattedTours = tourList.map((item) => ({
+      ...item,
+      day: item.travelTimeId?.day || 0,
+      night: item.travelTimeId?.night || 0,
+      vehicle: item.vehicleId?.map((v) => v.name) || [],
+      frequency: item.frequency?.title || "",
+      hotelStar: item.hotelId?.star || 0,
+    }));
+
+    res.json(formattedTours);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+// [GET] /api/v1/tours/advanced-search
+module.exports.advancedSearchTours = async (req, res) => {
+  try {
+    const { categorySlug } = req.params;
+    const category = categorySlug;
+    const {
+      q,
+      minPrice,
+      maxPrice,
+      departPlace,
+      filters,
+      vehicles,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    const filter = { deleted: false };
+
+    // Tên tour
+    if (q) {
+      const regex = new RegExp(q.trim().split(/\s+/).join(".*"), "i");
+      filter.title = { $regex: regex };
+    }
+
+    // Category (bao gồm con)
+    if (category) {
+      const rootCategory = await TourCategory.findOne({
+        slug: category,
+      }).lean();
+      if (!rootCategory) {
+        return res.status(404).json({ message: "Không tìm thấy danh mục" });
+      }
+      const childIds = await getAllDescendantIds(rootCategory._id);
+      const allCategoryIds = [rootCategory._id, ...childIds];
+      filter.categoryId = { $in: allCategoryIds };
+    }
+
+    // Ngân sách
+    if (minPrice || maxPrice) {
+      filter.prices = {};
+      if (minPrice) filter.prices.$gte = parseInt(minPrice, 10);
+      if (maxPrice) filter.prices.$lte = parseInt(maxPrice, 10);
+    }
+
+    // Điểm khởi hành
+    if (departPlace) {
+      const dp = await DepartPlace.findOne({ slug: departPlace }).lean();
+      if (!dp) {
+        return res
+          .status(404)
+          .json({ message: "Không tìm thấy điểm khởi hành" });
+      }
+      filter.departPlaceId = dp._id;
+    }
+
+    // Filter slug
+    if (filters) {
+      const arr = Array.isArray(filters) ? filters : [filters];
+      const filterDocs = await Filter.find({ slug: { $in: arr } }).lean();
+      const ids = filterDocs.map((f) => f._id);
+      if (ids.length > 0) {
+        filter.filterId = { $in: ids };
+      }
+    }
+
+    // Vehicle slug
+    if (vehicles) {
+      const arr = Array.isArray(vehicles) ? vehicles : [vehicles];
+      const vehicleDocs = await Vehicle.find({ slug: { $in: arr } }).lean();
+      const ids = vehicleDocs.map((v) => v._id);
+      if (ids.length > 0) {
+        // phải chứa đủ hết
+        filter.vehicleId = { $in: ids };
+      }
+    }
+
+    // Pagination
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Query
+    const [tours, totalItems] = await Promise.all([
+      Tour.find(filter)
+        .select(
+          "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type"
+        )
+        .populate({ path: "travelTimeId", select: "day night" })
+        .populate({ path: "vehicleId", select: "name" })
+        .populate({ path: "frequency", select: "title" })
+        .populate({ path: "hotelId", select: "star" })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Tour.countDocuments(filter),
+    ]);
+
+    // Format kết quả
+    const formattedTours = tours.map((item) => ({
+      ...item,
+      day: item.travelTimeId?.day || 0,
+      night: item.travelTimeId?.night || 0,
+      vehicle: item.vehicleId?.map((v) => v.name) || [],
+      frequency: item.frequency?.title || "",
+      hotelStar: item.hotelId?.star || 0,
+    }));
+
+    res.json({
+      data: formattedTours,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(totalItems / limitNum),
+        totalItems,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 };

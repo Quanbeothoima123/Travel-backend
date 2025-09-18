@@ -6,6 +6,9 @@ const typeOfPersonRoute = require("./type-of-person.route");
 const invoiceRoute = require("./invoice.route");
 const departPlace = require("./depart-place.route");
 const tourRoutes = require("./tour.route");
+const filterRoutes = require("./filter.route");
+const vehicleRoutes = require("./vehicle.route");
+const tourCategoryRoutes = require("./tour-category.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -16,4 +19,7 @@ module.exports = (app) => {
   app.use(version + "/invoice", invoiceRoute);
   app.use(version + "/tours", tourRoutes);
   app.use(version + "/depart-place", departPlace);
+  app.use(version + "/filter", filterRoutes);
+  app.use(version + "/vehicle", vehicleRoutes);
+  app.use(version + "/tour-category", tourCategoryRoutes);
 };

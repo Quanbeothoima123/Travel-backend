@@ -8,6 +8,7 @@ const DepartPlaceSchema = new mongoose.Schema(
       ref: "ProvinceDepartPlace",
     },
     description: { type: String, require: true },
+    slug: { type: String, required: true },
   },
   { timestamps: true }
 );

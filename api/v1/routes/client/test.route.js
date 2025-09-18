@@ -14,6 +14,4 @@ router.get("/info", controller.infoCategory);
 router.get("/tour-list-domestic", controller.tourListDomestic);
 router.get("/tour-list-aboard", controller.tourListAboard);
 router.get("/banner-list", controller.banner);
-router.get("/tour-list-by-category/:slug", controller.tourListByCategory);
-
 module.exports = router;
