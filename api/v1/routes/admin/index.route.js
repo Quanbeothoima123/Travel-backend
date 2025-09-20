@@ -9,6 +9,7 @@ const typeOfPersonRoute = require("./type-of-person.route");
 const filterRoute = require("./filter.route");
 const departPlace = require("./depart-place.route");
 const invoiceRoute = require("./invoice.route");
+const newsCategoryRoute = require("./news-category.route");
 const adminRoute = require("./admin.route");
 module.exports = (app) => {
   const version = "/api/v1/admin";
@@ -23,5 +24,6 @@ module.exports = (app) => {
   app.use(version + "/filter", filterRoute);
   app.use(version + "/depart-place", departPlace);
   app.use(version + "/invoice", invoiceRoute);
+  app.use(version + "/news-category", newsCategoryRoute);
   app.use(version, adminRoute);
 };
