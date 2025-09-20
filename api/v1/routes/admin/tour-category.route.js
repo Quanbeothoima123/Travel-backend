@@ -15,6 +15,8 @@ router.patch(
   tourCategoryValidate.validateUpdateCategory,
   controller.updateCategory
 );
+router.get("/delete-info/:id", controller.getDeleteCategoryInfo);
 router.delete("/delete/:id", controller.deleteCategory);
-
+router.get("/last-updated", controller.getLatestUpdatedCategory);
+router.get("/last-created", controller.getLatestCreatedCategory);
 module.exports = router;

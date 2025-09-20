@@ -1,15 +1,13 @@
 const TourCategory = require("../../models/tour-category.model");
 const buildTree = require("../../../../helpers/buildTree");
 const createSlug = require("../../../../helpers/createSlug");
+const collectDescendants = require("../../../../helpers/collectDescendants");
 const mongoose = require("mongoose");
 // [GET] /tour-categories
 exports.getAllCategories = async (req, res) => {
   try {
-    const { tree, deleted } = req.query;
-    const filter = {};
-    if (deleted === "true") filter.deleted = true;
-    else filter.deleted = false;
-
+    const { tree } = req.query;
+    const filter = { deleted: false };
     const categories = await TourCategory.find(filter).sort({ createdAt: -1 });
     if (tree === "true") {
       return res.json(buildTree(categories));
@@ -202,50 +200,150 @@ exports.updateCategory = async (req, res) => {
 };
 
 /**
- * DELETE /api/v1/tour-categories/delete/:id
- * Soft delete category + all descendants (deleted = true, deletedAt set)
+ * GET /api/v1/tour-categories/delete-info/:id
+ * Lấy thông tin trước khi xóa
+ */
+exports.getDeleteCategoryInfo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "ID không hợp lệ" });
+    }
+
+    const category = await TourCategory.findById(id).select("title");
+    if (!category) {
+      return res.status(404).json({ message: "Danh mục không tồn tại" });
+    }
+
+    const allCategories = await TourCategory.find({});
+    const categoryMap = Object.fromEntries(
+      allCategories.map((c) => [c._id.toString(), c.toObject()])
+    );
+    const deleteIds = collectDescendants(id, categoryMap);
+
+    res.json({
+      success: true,
+      categoryTitle: category.title,
+      affectedCount: deleteIds.length,
+    });
+  } catch (error) {
+    console.error("Lấy info xóa danh mục không thành công:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi lấy thông tin danh mục",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * DELETE /api/v1/tours-categories/delete/:id
+ * Thực hiện soft delete danh mục và con cháu
  */
 exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id))
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID không hợp lệ" });
-
-    // lấy toàn bộ categories để tìm descendants
-    const all = await TourCategory.find({});
-    const map = {};
-    all.forEach((c) => (map[c._id.toString()] = c.toObject ? c.toObject() : c));
-
-    // BFS/DFS collect ids
-    const toDelete = new Set();
-    const stack = [id];
-    while (stack.length) {
-      const cur = stack.pop();
-      toDelete.add(cur);
-      Object.values(map).forEach((candidate) => {
-        if (candidate.parentId && candidate.parentId.toString() === cur) {
-          if (!toDelete.has(candidate._id.toString())) {
-            stack.push(candidate._id.toString());
-          }
-        }
-      });
+    }
+    // Không cho xóa danh mục du lịch cha
+    if (id === "68a1ae783856445e14a6aff2") {
+      return res
+        .status(400)
+        .json({ message: "Bạn không thể xóa danh mục này!" });
     }
 
-    const ids = Array.from(toDelete);
+    const category = await TourCategory.findById(id).select("title");
+    if (!category) {
+      return res.status(404).json({ message: "Danh mục không tồn tại" });
+    }
+
+    const allCategories = await TourCategory.find({});
+    const categoryMap = Object.fromEntries(
+      allCategories.map((c) => [c._id.toString(), c.toObject()])
+    );
+    const deleteIds = collectDescendants(id, categoryMap);
+
     await TourCategory.updateMany(
-      { _id: { $in: ids } },
+      { _id: { $in: deleteIds } },
       { $set: { deleted: true, deletedAt: new Date() } }
     );
 
     res.json({
       success: true,
-      message: "Đã xóa (soft) danh mục và con của nó",
+      categoryTitle: category.title,
+      affectedCount: deleteIds.length,
     });
   } catch (error) {
-    console.error("deleteCategory error:", error);
+    console.error("Xóa danh mục du lịch không thành công:", error);
     res.status(500).json({
       success: false,
       message: "Lỗi xóa danh mục",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/v1/admin/news-category/latest-updated
+ * Lấy ID của danh mục được cập nhật mới nhất
+ */
+exports.getLatestUpdatedCategory = async (req, res) => {
+  try {
+    const latestCategory = await TourCategory.findOne({ deleted: false })
+      .sort({ updatedAt: -1 }) // sắp xếp giảm dần theo updatedAt
+      .select("_id title updatedAt");
+
+    if (!latestCategory) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy danh mục nào",
+      });
+    }
+
+    res.json({
+      success: true,
+      latestId: latestCategory._id,
+      title: latestCategory.title,
+      updatedAt: latestCategory.updatedAt,
+    });
+  } catch (error) {
+    console.error("Lỗi lấy danh mục cập nhật mới nhất:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: error.message,
+    });
+  }
+};
+/**
+ * GET /api/v1/admin/news-category/latest-created
+ * Lấy ID của danh mục được tạo mới nhất
+ */
+exports.getLatestCreatedCategory = async (req, res) => {
+  try {
+    const latestCategory = await TourCategory.findOne({ deleted: false })
+      .sort({ createdAt: -1 }) // sắp xếp giảm dần theo createdAt
+      .select("_id title createdAt");
+
+    if (!latestCategory) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy danh mục nào",
+      });
+    }
+
+    res.json({
+      success: true,
+      latestId: latestCategory._id,
+      title: latestCategory.title,
+      createdAt: latestCategory.createdAt,
+    });
+  } catch (error) {
+    console.error("Lỗi lấy danh mục tạo mới nhất:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
       error: error.message,
     });
   }
