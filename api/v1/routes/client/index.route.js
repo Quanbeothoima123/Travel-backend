@@ -9,6 +9,8 @@ const tourRoutes = require("./tour.route");
 const filterRoutes = require("./filter.route");
 const vehicleRoutes = require("./vehicle.route");
 const tourCategoryRoutes = require("./tour-category.route");
+const newsRoute = require("./news.route");
+const newsCategoryRoute = require("./news-category.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -22,4 +24,6 @@ module.exports = (app) => {
   app.use(version + "/filter", filterRoutes);
   app.use(version + "/vehicle", vehicleRoutes);
   app.use(version + "/tour-category", tourCategoryRoutes);
+  app.use(version + "/news", newsRoute);
+  app.use(version + "/news-category", newsCategoryRoute);
 };

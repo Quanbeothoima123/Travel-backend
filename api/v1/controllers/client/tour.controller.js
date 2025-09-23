@@ -24,6 +24,21 @@ module.exports.getAllTour = async (req, res) => {
   }
 };
 
+module.exports.getIdAndTitle = async (req, res) => {
+  try {
+    const { limit = 100 } = req.query;
+    const query = { active: "true" };
+    const tours = await Tour.find(query).limit(limit).select("_id title");
+
+    res.json({
+      success: true,
+      tours: tours,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // [GET] /api/v1/tours/search
 module.exports.searchTour = async (req, res) => {
   try {
@@ -86,7 +101,10 @@ module.exports.searchToursCombined = async (req, res) => {
         return res.status(404).json({ message: "Không tìm thấy danh mục" });
       }
 
-      const childIds = await getAllDescendantIds(rootCategory._id);
+      const childIds = await getAllDescendantIds(
+        TourCategory,
+        rootCategory._id
+      );
       const allCategoryIds = [
         rootCategory._id.toString(),
         ...childIds.map((id) => id.toString()),
@@ -188,7 +206,7 @@ module.exports.tourListByCategory = async (req, res) => {
     }
 
     // lấy tất cả category con
-    const childIds = await getAllDescendantIds(rootCategory._id);
+    const childIds = await getAllDescendantIds(TourCategory, rootCategory._id);
     const allCategoryIds = [
       rootCategory._id.toString(),
       ...childIds.map((id) => id.toString()),
@@ -268,7 +286,10 @@ module.exports.advancedSearchTours = async (req, res) => {
       if (!rootCategory) {
         return res.status(404).json({ message: "Không tìm thấy danh mục" });
       }
-      const childIds = await getAllDescendantIds(rootCategory._id);
+      const childIds = await getAllDescendantIds(
+        TourCategory,
+        rootCategory._id
+      );
       const allCategoryIds = [rootCategory._id, ...childIds];
       filter.categoryId = { $in: allCategoryIds };
     }

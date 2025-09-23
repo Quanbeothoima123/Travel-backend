@@ -11,7 +11,9 @@ const departPlace = require("./depart-place.route");
 const invoiceRoute = require("./invoice.route");
 const newsCategoryRoute = require("./news-category.route");
 const newsRoute = require("./news.route");
+const aiRoute = require("./ai.route");
 const adminRoute = require("./admin.route");
+
 module.exports = (app) => {
   const version = "/api/v1/admin";
   app.use(version + "/tour-categories", tourCategoryRoute);
@@ -27,5 +29,6 @@ module.exports = (app) => {
   app.use(version + "/invoice", invoiceRoute);
   app.use(version + "/news-category", newsCategoryRoute);
   app.use(version + "/news", newsRoute);
+  app.use(version + "/ai", aiRoute);
   app.use(version, adminRoute);
 };
