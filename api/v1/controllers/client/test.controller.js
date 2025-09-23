@@ -16,7 +16,6 @@ const Banner = require("../../models/banner.model");
 const Term = require("../../models/term.model");
 const TypeOfPerson = require("../../models/type-of-person.model");
 const buildTree = require("../../../../helpers/buildTree");
-const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 module.exports.province = async (req, res) => {
   try {
     const province = await Province.find();

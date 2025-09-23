@@ -32,7 +32,7 @@ module.exports.getTours = async (req, res) => {
 
     // Filter theo category (bao gồm cả con)
     if (categoryId) {
-      const ids = await getAllDescendantIds(categoryId);
+      const ids = await getAllDescendantIds(TourCategory, categoryId);
       query.categoryId = { $in: [categoryId, ...ids] };
     }
 
@@ -87,6 +87,23 @@ module.exports.getTours = async (req, res) => {
         currentPage: Number(page),
         totalPages: Math.ceil(total / limit),
       },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports.getIdAndTitle = async (req, res) => {
+  try {
+    const { limit = 100 } = req.query;
+    const query = { active: "true" };
+    const tours = await Tour.find(query)
+      .limit(limit)
+      .select("_id title thumbnail slug");
+
+    res.json({
+      success: true,
+      tours: tours,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

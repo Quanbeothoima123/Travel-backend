@@ -1,15 +1,20 @@
 // helpers/getAllDescendantIds.js
-const TourCategory = require("../api/v1/models/tour-category.model");
-
-module.exports = async function getAllDescendantIds(rootId) {
+module.exports = async function getAllDescendantIds(
+  Model,
+  rootId,
+  parentField = "parentId"
+) {
   const queue = [rootId.toString()];
   const collected = new Set();
 
   while (queue.length) {
     const parentIdStr = queue.shift();
-    const children = await TourCategory.find({ parentId: parentIdStr })
+
+    // Tìm tất cả con của node hiện tại
+    const children = await Model.find({ [parentField]: parentIdStr })
       .select("_id")
       .lean();
+
     for (const child of children) {
       const childIdStr = child._id.toString();
       if (!collected.has(childIdStr)) {
@@ -19,6 +24,5 @@ module.exports = async function getAllDescendantIds(rootId) {
     }
   }
 
-  // Trả về mảng CHUỖI (string) để phù hợp với Tour.categoryId nếu đó là string
   return Array.from(collected);
 };

@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const { createMomoPayment } = require("../../../../utils/momo");
 const { JWT_SECRET } = process.env;
 const emailService = require("../../../../services/emailService");
+const TourCategory = require("../../models/tour-category.model");
 // [POST] /api/v1/invoices
 module.exports.createInvoice = async (req, res) => {
   try {
@@ -552,7 +553,7 @@ module.exports.getInvoices = async (req, res) => {
     // 4. Chuẩn bị match cho tourId
     let categoryIds = null;
     if (categoryId) {
-      const descendantIds = await getAllDescendantIds(categoryId);
+      const descendantIds = await getAllDescendantIds(TourCategory, categoryId);
       categoryIds = [categoryId, ...descendantIds];
     }
 
