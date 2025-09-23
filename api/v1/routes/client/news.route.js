@@ -1,0 +1,10 @@
+const express = require("express");
+const router = express.Router();
+const controller = require("../../controllers/client/news.controller");
+// router.post("/create", controller.create);
+router.get("/published", controller.getPublishedNews);
+router.get("/news-list-by-category/:slug", controller.newsListByCategory);
+router.get("/advanced-search/:newsCategorySlug", controller.advancedSearchNews);
+router.get("/detail/:newsSlug", controller.detailNews);
+router.patch("/update-views/:newsId", controller.updateNewsViews);
+module.exports = router;
