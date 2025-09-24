@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
 
 const UserFavoriteSchema = new mongoose.Schema({
   userId: {
@@ -14,7 +14,7 @@ const UserFavoriteSchema = new mongoose.Schema({
   },
   targetType: {
     type: String,
-    enum: ["article", "tour", "video"],
+    enum: ["article", "tour", "video", "news"],
     required: true,
   },
 
@@ -27,4 +27,9 @@ UserFavoriteSchema.index(
   { unique: true }
 );
 
-export default mongoose.model("UserFavorite", UserFavoriteSchema);
+const UserFavorite = mongoose.model(
+  "UserFavorite",
+  UserFavoriteSchema,
+  "user-favorite"
+);
+module.exports = UserFavorite;

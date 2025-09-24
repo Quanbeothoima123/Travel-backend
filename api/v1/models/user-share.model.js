@@ -1,10 +1,9 @@
-import mongoose from "mongoose";
-
+const mongoose = require("mongoose");
 const UserShareSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
+    required: false,
     index: true,
   },
   targetId: {
@@ -14,7 +13,7 @@ const UserShareSchema = new mongoose.Schema({
   },
   targetType: {
     type: String,
-    enum: ["article", "tour", "video"],
+    enum: ["article", "tour", "video", "news"],
     required: true,
   },
 
@@ -29,4 +28,5 @@ const UserShareSchema = new mongoose.Schema({
 
 UserShareSchema.index({ userId: 1, targetId: 1, targetType: 1 });
 
-export default mongoose.model("UserShare", UserShareSchema);
+const UserShare = mongoose.model("UserShare", UserShareSchema, "user-share");
+module.exports = UserShare;

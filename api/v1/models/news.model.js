@@ -62,7 +62,8 @@ const NewsSchema = new mongoose.Schema(
     // Engagement
     views: { type: Number, default: 0 },
     likes: { type: Number, default: 0 },
-    favorites: { type: Number, default: 0 },
+    saves: { type: Number, default: 0 },
+    shares: { type: Number, default: 0 },
 
     // Event related
     eventDate: { type: Date },

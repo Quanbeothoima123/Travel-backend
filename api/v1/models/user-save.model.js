@@ -1,5 +1,4 @@
-import mongoose from "mongoose";
-
+const mongoose = require("mongoose");
 const UserSaveSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -14,7 +13,7 @@ const UserSaveSchema = new mongoose.Schema({
   },
   targetType: {
     type: String,
-    enum: ["article", "tour", "video"],
+    enum: ["article", "tour", "video", "news"],
     required: true,
   },
 
@@ -29,4 +28,5 @@ UserSaveSchema.index(
   { unique: true }
 );
 
-export default mongoose.model("UserSave", UserSaveSchema);
+const UserSave = mongoose.model("UserSave", UserSaveSchema, "user-save");
+module.exports = UserSave;
