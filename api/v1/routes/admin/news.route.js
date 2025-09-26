@@ -3,5 +3,10 @@ const router = express.Router();
 const controller = require("../../controllers/admin/news.controller");
 router.post("/create", controller.create);
 router.get("/published", controller.getPublishedNews);
-
+router.get("/manager", controller.getNewsList);
+router.get("/detail/:id", controller.getNewsById);
+router.delete("/delete/:id", controller.deleteNews);
+router.get("/news-categories", controller.getNewsCategories);
+router.get("/authors", controller.getAuthors);
+router.get("/status/:id", controller.updateNewsStatus);
 module.exports = router;

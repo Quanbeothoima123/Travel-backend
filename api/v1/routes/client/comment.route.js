@@ -1,0 +1,15 @@
+const express = require("express");
+const router = express.Router();
+const controller = require("../../controllers/client/comment.controller");
+const { checkAuth } = require("../../../../middlewares/auth.middleware");
+router.get("/getComments", checkAuth, controller.getComments);
+router.get("/replies/:commentId", checkAuth, controller.getCommentReplies);
+router.get("/full-tree/:commentId", checkAuth, controller.getCommentFullTree);
+router.get("/count", checkAuth, controller.getCommentsCount);
+router.post("/create", checkAuth, controller.createComment);
+router.delete("/delete/:commentId", checkAuth, controller.deleteComment);
+router.post("/like", checkAuth, controller.likeComment);
+router.post("/unLike", checkAuth, controller.unlikeComment);
+router.post("/disLike", checkAuth, controller.dislikeComment);
+router.post("/unDisLike", checkAuth, controller.unDisLikeComment);
+module.exports = router;

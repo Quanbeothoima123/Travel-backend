@@ -227,7 +227,9 @@ module.exports.login = async (req, res) => {
 // [GET] /api/v1/user/me
 module.exports.getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select("fullName email");
+    const user = await User.findById(req.user.userId).select(
+      "fullName email avatar"
+    );
     res.json(user);
   } catch (err) {
     res.status(500).json({ message: "Lỗi server" });

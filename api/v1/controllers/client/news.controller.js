@@ -1,6 +1,10 @@
 const jwt = require("jsonwebtoken");
+
 const News = require("../../models/news.model");
 const NewsCategory = require("../../models/new-category.model");
+const AdminAccount = require("../../models/admin-account.model");
+const User = require("../../models/user.model");
+const Comment = require("../../models/comment.model");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 /**
  * GET /api/v1/news/published

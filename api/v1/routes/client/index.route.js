@@ -11,9 +11,10 @@ const vehicleRoutes = require("./vehicle.route");
 const tourCategoryRoutes = require("./tour-category.route");
 const newsRoute = require("./news.route");
 const newsCategoryRoute = require("./news-category.route");
-const userFavorite = require("./user-favorite.route");
-const userSave = require("./user-save.route");
-const userShare = require("./user-share.route");
+const userFavoriteRoute = require("./user-favorite.route");
+const userSaveRoute = require("./user-save.route");
+const userShareRoute = require("./user-share.route");
+const commentRoute = require("./comment.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -29,7 +30,8 @@ module.exports = (app) => {
   app.use(version + "/tour-category", tourCategoryRoutes);
   app.use(version + "/news", newsRoute);
   app.use(version + "/news-category", newsCategoryRoute);
-  app.use(version + "/user-favorite", userFavorite);
-  app.use(version + "/user-save", userSave);
-  app.use(version + "/user-share", userShare);
+  app.use(version + "/user-favorite", userFavoriteRoute);
+  app.use(version + "/user-save", userSaveRoute);
+  app.use(version + "/user-share", userShareRoute);
+  app.use(version + "/comments", commentRoute);
 };
