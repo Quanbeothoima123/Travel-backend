@@ -527,58 +527,6 @@ module.exports.getAuthors = async (req, res) => {
     });
   }
 };
-
-// PATCH /api/admin/news/:id/status - Cập nhật trạng thái tin tức (draft/published/archived)
-module.exports.updateNewsStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-    const adminId = req.admin?._id;
-
-    if (!["draft", "published", "archived"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Trạng thái không hợp lệ",
-      });
-    }
-
-    const updateData = {
-      status,
-      updatedBy: {
-        _id: adminId,
-        time: new Date(),
-      },
-    };
-
-    // If publishing, set publishedAt
-    if (status === "published") {
-      updateData.publishedAt = new Date();
-    }
-
-    const news = await News.findByIdAndUpdate(id, updateData, {
-      new: true,
-    });
-
-    if (!news) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy tin tức",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Cập nhật trạng thái thành công",
-      data: news,
-    });
-  } catch (error) {
-    console.error("Error in updateNewsStatus:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Lỗi server khi cập nhật trạng thái",
-    });
-  }
-};
 //  Phục vụ chức năng chỉnh sửa tin tức
 // GET /api/v1/admin/news/:id - Lấy thông tin chi tiết news để edit
 module.exports.getNewsForEdit = async (req, res) => {
@@ -748,6 +696,7 @@ module.exports.updateNews = async (req, res) => {
         : [],
 
       // Update tracking info
+
       updatedBy: {
         _id: req.user?.id, // Assuming user info is in req.user
         time: new Date(),
@@ -836,6 +785,172 @@ module.exports.checkSlugAvailability = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Lỗi server khi kiểm tra slug",
+    });
+  }
+};
+//  Controller phục vụ cho trang chi tiết của News
+
+// [GET] /admin/news/detail/:id - Lấy chi tiết bài viết
+module.exports.getNewsDetail = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const news = await News.findById(id)
+      .populate("newsCategoryId", "title slug")
+      .populate("categoryId", "title slug")
+      .populate("destinationIds", "name slug name_with_type")
+      .populate("relatedTourIds", "title slug thumbnail prices discount seats")
+      .populate("createdBy._id", "fullName email avatar")
+      .populate("updatedBy._id", "fullName email avatar")
+      .populate("deletedBy._id", "fullName email avatar")
+      .lean();
+
+    if (!news) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy bài viết",
+      });
+    }
+
+    // Lấy thông tin tác giả dựa vào type
+    let authorInfo = null;
+    if (news.author && news.author.id) {
+      if (news.author.type === "admin") {
+        authorInfo = await AdminAccount.findById(news.author.id)
+          .select("fullName email avatar phone")
+          .lean();
+      } else if (news.author.type === "user") {
+        authorInfo = await User.findById(news.author.id)
+          .select("fullName email avatar phone")
+          .lean();
+      }
+    }
+
+    // Format dữ liệu trả về
+    const responseData = {
+      ...news,
+      authorInfo: authorInfo
+        ? {
+            ...authorInfo,
+            type: news.author.type,
+          }
+        : null,
+    };
+
+    res.json({
+      success: true,
+      data: responseData,
+    });
+  } catch (error) {
+    console.error("Error fetching news detail:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server khi lấy chi tiết bài viết",
+      error: error.message,
+    });
+  }
+};
+
+// [PUT] /admin/news/status/:id - Cập nhật trạng thái bài viết
+module.exports.updateNewsStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const adminId = req.user?.id; // Giả sử có middleware xác thực
+
+    if (!["draft", "published", "archived"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Trạng thái không hợp lệ",
+      });
+    }
+
+    const updateData = {
+      status,
+      "updatedBy._id": adminId,
+      "updatedBy.time": new Date(),
+    };
+
+    // Nếu publish thì set publishedAt
+    if (status === "published") {
+      updateData.publishedAt = new Date();
+    }
+
+    const updatedNews = await News.findByIdAndUpdate(id, updateData, {
+      new: true,
+    });
+
+    if (!updatedNews) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy bài viết",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Cập nhật trạng thái thành công",
+      data: {
+        id: updatedNews._id,
+        status: updatedNews.status,
+        publishedAt: updatedNews.publishedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating news status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server khi cập nhật trạng thái",
+      error: error.message,
+    });
+  }
+};
+
+// [PUT] /admin/news/:id/engagement - Cập nhật tương tác (views, likes, saves, shares)
+module.exports.updateEngagement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type } = req.body; // 'view', 'like', 'save', 'share'
+
+    if (!["view", "like", "save", "share"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Loại tương tác không hợp lệ",
+      });
+    }
+
+    const updateField = {};
+    updateField[type + "s"] = 1;
+
+    const updatedNews = await News.findByIdAndUpdate(
+      id,
+      { $inc: updateField },
+      { new: true }
+    ).select("views likes saves shares");
+
+    if (!updatedNews) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy bài viết",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Cập nhật ${type} thành công`,
+      data: {
+        views: updatedNews.views,
+        likes: updatedNews.likes,
+        saves: updatedNews.saves,
+        shares: updatedNews.shares,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating engagement:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server khi cập nhật tương tác",
+      error: error.message,
     });
   }
 };
