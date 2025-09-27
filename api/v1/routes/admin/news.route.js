@@ -9,4 +9,7 @@ router.delete("/delete/:id", controller.deleteNews);
 router.get("/news-categories", controller.getNewsCategories);
 router.get("/authors", controller.getAuthors);
 router.get("/status/:id", controller.updateNewsStatus);
+router.get("/get-data-for-edit/:id", controller.getNewsForEdit);
+router.patch("/edit/:id", controller.updateNews);
+router.get("/check-slug/:id", controller.checkSlugAvailability);
 module.exports = router;
