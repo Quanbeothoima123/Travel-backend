@@ -328,11 +328,40 @@ module.exports.getNewsCategories = async (req, res) => {
   }
 };
 
-// GET /api/admin/authors - Lấy danh sách tác giả (admin + user) cho dropdown filter
+// GET /api/admin/authors - Lấy danh sách tác giả có bài viết
 module.exports.getAuthors = async (req, res) => {
   try {
+    // Cách 1: Sử dụng aggregation (hiệu quả hơn cho dataset lớn)
+    const newsAuthors = await News.aggregate([
+      {
+        $match: {
+          deleted: false,
+          status: { $ne: "archived" },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            type: "$author.type",
+            id: "$author.id",
+          },
+        },
+      },
+    ]);
+
+    // Tách ra admin IDs và user IDs
+    const adminIds = newsAuthors
+      .filter((author) => author._id.type === "admin")
+      .map((author) => author._id.id);
+
+    const userIds = newsAuthors
+      .filter((author) => author._id.type === "user")
+      .map((author) => author._id.id);
+
+    // Lấy thông tin chi tiết của admin và user có bài viết
     const [adminAuthors, userAuthors] = await Promise.all([
       AdminAccount.find({
+        _id: { $in: adminIds },
         deleted: false,
         status: "active",
       })
@@ -341,6 +370,7 @@ module.exports.getAuthors = async (req, res) => {
         .lean(),
 
       User.find({
+        _id: { $in: userIds },
         deleted: false,
         status: { $ne: "banned" },
       })
@@ -351,7 +381,7 @@ module.exports.getAuthors = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Lấy danh sách tác giả thành công",
+      message: "Lấy danh sách tác giả có bài viết thành công",
       data: {
         admin: adminAuthors,
         user: userAuthors,
