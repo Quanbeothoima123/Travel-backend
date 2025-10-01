@@ -2,7 +2,6 @@ const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/client/test.controller");
 
-router.get("/province", controller.province);
 router.get("/ward", controller.ward);
 router.get("/tour", controller.tourCategory);
 router.get("/homePage", controller.homePage);

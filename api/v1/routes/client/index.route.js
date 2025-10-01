@@ -7,6 +7,7 @@ const invoiceRoute = require("./invoice.route");
 const departPlace = require("./depart-place.route");
 const tourRoutes = require("./tour.route");
 const filterRoutes = require("./filter.route");
+const provinceRoutes = require("./province.route");
 const vehicleRoutes = require("./vehicle.route");
 const tourCategoryRoutes = require("./tour-category.route");
 const newsRoute = require("./news.route");
@@ -15,6 +16,7 @@ const userFavoriteRoute = require("./user-favorite.route");
 const userSaveRoute = require("./user-save.route");
 const userShareRoute = require("./user-share.route");
 const commentRoute = require("./comment.route");
+const shortRoutes = require("./short.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -26,6 +28,7 @@ module.exports = (app) => {
   app.use(version + "/tours", tourRoutes);
   app.use(version + "/depart-place", departPlace);
   app.use(version + "/filter", filterRoutes);
+  app.use(version + "/province", provinceRoutes);
   app.use(version + "/vehicle", vehicleRoutes);
   app.use(version + "/tour-category", tourCategoryRoutes);
   app.use(version + "/news", newsRoute);
@@ -34,4 +37,5 @@ module.exports = (app) => {
   app.use(version + "/user-save", userSaveRoute);
   app.use(version + "/user-share", userShareRoute);
   app.use(version + "/comments", commentRoute);
+  app.use(version + "/shorts", shortRoutes);
 };
