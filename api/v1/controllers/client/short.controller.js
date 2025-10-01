@@ -104,22 +104,44 @@ const uploadToB2 = async (filePath, fileName, bucketId) => {
 };
 
 // Hàm tạo HLS segments từ video
+// Hàm tạo HLS segments từ video - UPDATED WITH DEBUG
 const convertToHLS = (inputPath, outputDir) => {
   return new Promise((resolve, reject) => {
     const outputPlaylist = path.join(outputDir, "playlist.m3u8");
 
     ffmpeg(inputPath)
       .outputOptions([
-        "-c:v libx264", // Video codec
-        "-c:a aac", // Audio codec
-        "-b:v 1500k", // Video bitrate
-        "-b:a 128k", // Audio bitrate
-        "-preset veryfast", // Encoding preset
-        "-start_number 0",
-        "-hls_time 10",
+        // Video codec
+        "-c:v libx264",
+        "-profile:v main",
+        "-level 4.0",
+
+        // Bitrate
+        "-b:v 1500k",
+        "-maxrate 1800k",
+        "-bufsize 3000k",
+
+        // Audio
+        "-c:a aac",
+        "-b:a 128k",
+        "-ar 44100",
+
+        // Encoding speed
+        "-preset veryfast",
+
+        // CRITICAL: Keyframe settings để đảm bảo seeking hoạt động
+        "-g 48", // Keyframe mỗi 48 frames
+        "-keyint_min 48", // Min keyframe interval
+        "-sc_threshold 0", // Tắt scene change detection
+        "-force_key_frames expr:gte(t,n_forced*2)", // Force keyframe mỗi 2s
+
+        // HLS settings
+        "-f hls",
+        "-hls_time 6", // 6 giây mỗi segment
         "-hls_list_size 0",
         "-hls_segment_type mpegts",
-        "-f hls",
+        "-hls_flags independent_segments+program_date_time",
+        "-start_number 0",
         "-hls_segment_filename",
         path.join(outputDir, "segment%03d.ts"),
       ])
@@ -130,8 +152,44 @@ const convertToHLS = (inputPath, outputDir) => {
       .on("progress", (progress) => {
         console.log(`Processing: ${Math.round(progress.percent || 0)}% done`);
       })
-      .on("end", () => {
+      .on("end", async () => {
         console.log("HLS conversion completed");
+
+        // DEBUG: Kiểm tra playlist vừa tạo
+        try {
+          const playlistContent = await fs.readFile(outputPlaylist, "utf8");
+          console.log("\n=== PLAYLIST CONTENT ===");
+          console.log(playlistContent);
+          console.log("=========================\n");
+
+          // Validate playlist
+          if (!playlistContent.includes("#EXT-X-INDEPENDENT-SEGMENTS")) {
+            console.error(
+              "❌ WARNING: Missing #EXT-X-INDEPENDENT-SEGMENTS flag!"
+            );
+          } else {
+            console.log("✅ Has #EXT-X-INDEPENDENT-SEGMENTS flag");
+          }
+
+          // Parse segment durations
+          const matches = playlistContent.match(/#EXTINF:([\d.]+)/g);
+          if (matches) {
+            const durations = matches.map((m) => parseFloat(m.split(":")[1]));
+            console.log("📊 Segment durations:", durations);
+            console.log("   Min:", Math.min(...durations).toFixed(2), "s");
+            console.log("   Max:", Math.max(...durations).toFixed(2), "s");
+            console.log(
+              "   Avg:",
+              (durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(
+                2
+              ),
+              "s"
+            );
+          }
+        } catch (err) {
+          console.error("Cannot read playlist for validation:", err);
+        }
+
         resolve(outputPlaylist);
       })
       .on("error", (err, stdout, stderr) => {
@@ -143,10 +201,30 @@ const convertToHLS = (inputPath, outputDir) => {
   });
 };
 
-// Hàm upload toàn bộ HLS files lên B2
+// Hàm upload toàn bộ HLS files lên B2 - UPDATED WITH DEBUG
 const uploadHLSToB2 = async (hlsDir, shortId, bucketId) => {
   try {
     const files = await fs.readdir(hlsDir);
+
+    console.log("\n=== FILES TO UPLOAD ===");
+    for (const file of files) {
+      const filePath = path.join(hlsDir, file);
+      const stats = await fs.stat(filePath);
+      const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+      console.log(`${file}: ${sizeMB} MB`);
+
+      // Warning cho file quá nhỏ
+      if (stats.size === 0) {
+        console.error(`❌ CRITICAL: ${file} is 0 bytes!`);
+        throw new Error(`Invalid file: ${file} is empty`);
+      }
+
+      if (stats.size < 1000 && file.endsWith(".ts")) {
+        console.warn(`⚠️ WARNING: ${file} is very small (${stats.size} bytes)`);
+      }
+    }
+    console.log("=======================\n");
+
     const uploadPromises = [];
     const b2Folder = `shorts/${shortId}/`;
 
@@ -154,10 +232,19 @@ const uploadHLSToB2 = async (hlsDir, shortId, bucketId) => {
       const filePath = path.join(hlsDir, file);
       const b2FileName = `${b2Folder}${file}`;
 
-      uploadPromises.push(uploadToB2(filePath, b2FileName, bucketId));
+      console.log(`Uploading: ${b2FileName}`);
+      uploadPromises.push(
+        uploadToB2(filePath, b2FileName, bucketId)
+          .then(() => console.log(`✅ Uploaded: ${file}`))
+          .catch((err) => {
+            console.error(`❌ Failed to upload ${file}:`, err.message);
+            throw err;
+          })
+      );
     }
 
     await Promise.all(uploadPromises);
+    console.log("✅ All HLS files uploaded successfully");
 
     // Trả về URL của playlist.m3u8
     const playlistUrl = `${b2Folder}playlist.m3u8`;

@@ -133,31 +133,36 @@ const proxySegment = async (req, res) => {
 
     console.log("\n=== PROXY SEGMENT ===");
     console.log("Segment:", segmentName);
+    console.log("Short ID:", shortId);
 
     const { downloadUrl, token } = await getB2DownloadUrl();
     const bucketName = process.env.B2_BUCKET_NAME;
 
     const url = `${downloadUrl}/file/${bucketName}/${fileName}`;
+    console.log("B2 URL:", url);
 
-    // Support for Range requests (important for seeking)
     const headers = {
       Authorization: token,
     };
 
     if (req.headers.range) {
       headers.Range = req.headers.range;
-      console.log("Range request:", req.headers.range);
+      console.log("📍 Range request:", req.headers.range);
     }
 
     const response = await axios.get(url, {
       headers,
       responseType: "stream",
-      timeout: 30000, // 30s timeout
+      timeout: 30000,
+      validateStatus: (status) => status < 500,
     });
 
-    console.log("Status:", response.status);
+    console.log("✅ B2 Response Status:", response.status);
+    console.log("   Content-Length:", response.headers["content-length"]);
+    if (response.headers["content-range"]) {
+      console.log("   Content-Range:", response.headers["content-range"]);
+    }
 
-    // Forward status code (206 for partial content)
     res.status(response.status);
 
     // Set proper headers
@@ -166,11 +171,8 @@ const proxySegment = async (req, res) => {
     res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
     res.set("Access-Control-Allow-Headers", "Range, Content-Type");
     res.set("Accept-Ranges", "bytes");
-
-    // Cache segments for 1 year (they never change)
     res.set("Cache-Control", "public, max-age=31536000, immutable");
 
-    // Forward content-length and range headers if present
     if (response.headers["content-length"]) {
       res.set("Content-Length", response.headers["content-length"]);
     }
@@ -186,9 +188,22 @@ const proxySegment = async (req, res) => {
 
     response.data.on("error", (err) => {
       console.error("❌ Stream error:", err.message);
+      if (!res.headersSent) {
+        res.status(500).end();
+      }
+    });
+
+    req.on("close", () => {
+      if (response.data) {
+        response.data.destroy();
+      }
     });
   } catch (error) {
     console.error("❌ Proxy segment error:", error.message);
+    if (error.response) {
+      console.error("   Status:", error.response.status);
+      console.error("   Data:", error.response.data);
+    }
     if (!res.headersSent) {
       res.status(500).json({
         message: "Error loading segment",
