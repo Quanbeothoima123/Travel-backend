@@ -4,7 +4,7 @@ const createSlug = require("../../../../helpers/createSlug");
 const collectDescendants = require("../../../../helpers/collectDescendants");
 const mongoose = require("mongoose");
 // [GET] /tour-categories
-exports.getAllCategories = async (req, res) => {
+module.exports.getAllCategories = async (req, res) => {
   try {
     const { tree } = req.query;
     const filter = { deleted: false };
@@ -23,7 +23,7 @@ exports.getAllCategories = async (req, res) => {
  * GET /api/v1/tour-categories/recent?type=created|updated&limit=10
  * Trả về danh sách các mục mới/được cập nhật gần đây kèm subtree (nếu có)
  */
-exports.getRecentCategories = async (req, res) => {
+module.exports.getRecentCategories = async (req, res) => {
   try {
     const type = req.query.type === "updated" ? "updated" : "created";
     const limit = parseInt(req.query.limit, 10) || 10;
@@ -76,7 +76,7 @@ exports.getRecentCategories = async (req, res) => {
 /**
  * GET /api/v1/tour-categories/:id
  */
-exports.getCategoryById = async (req, res) => {
+module.exports.getCategoryById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -125,7 +125,7 @@ exports.getCategoryById = async (req, res) => {
 /**
  * POST /api/v1/tour-categories/create
  */
-exports.createCategory = async (req, res) => {
+module.exports.createCategory = async (req, res) => {
   try {
     const { title, parentId, active } = req.body;
     const slug = createSlug(title);
@@ -146,7 +146,7 @@ exports.createCategory = async (req, res) => {
 /**
  * PATCH /api/v1/tour-categories/update/:id
  */
-exports.updateCategory = async (req, res) => {
+module.exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
     let { title, parentId, slug, active } = req.body;
@@ -203,7 +203,7 @@ exports.updateCategory = async (req, res) => {
  * GET /api/v1/tour-categories/delete-info/:id
  * Lấy thông tin trước khi xóa
  */
-exports.getDeleteCategoryInfo = async (req, res) => {
+module.exports.getDeleteCategoryInfo = async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -240,7 +240,7 @@ exports.getDeleteCategoryInfo = async (req, res) => {
  * DELETE /api/v1/tours-categories/delete/:id
  * Thực hiện soft delete danh mục và con cháu
  */
-exports.deleteCategory = async (req, res) => {
+module.exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -288,7 +288,7 @@ exports.deleteCategory = async (req, res) => {
  * GET /api/v1/admin/news-category/latest-updated
  * Lấy ID của danh mục được cập nhật mới nhất
  */
-exports.getLatestUpdatedCategory = async (req, res) => {
+module.exports.getLatestUpdatedCategory = async (req, res) => {
   try {
     const latestCategory = await TourCategory.findOne({ deleted: false })
       .sort({ updatedAt: -1 }) // sắp xếp giảm dần theo updatedAt
@@ -320,7 +320,7 @@ exports.getLatestUpdatedCategory = async (req, res) => {
  * GET /api/v1/admin/news-category/latest-created
  * Lấy ID của danh mục được tạo mới nhất
  */
-exports.getLatestCreatedCategory = async (req, res) => {
+module.exports.getLatestCreatedCategory = async (req, res) => {
   try {
     const latestCategory = await TourCategory.findOne({ deleted: false })
       .sort({ createdAt: -1 }) // sắp xếp giảm dần theo createdAt
