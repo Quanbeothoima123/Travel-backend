@@ -4,7 +4,7 @@ const TourCategory = require("../../models/tour-category.model");
 const HomeCategory = require("../../models/home-page.model");
 const ServiceCategory = require("../../models/service.model");
 const NewsCategory = require("../../models/new-category.model");
-const LibraryCategory = require("../../models/library.model");
+const GalleryCategory = require("../../models/gallery-category.model");
 const ContactCategory = require("../../models/contact.model");
 const InfoCategory = require("../../models/information.model");
 const Tour = require("../../models/tour.model");
@@ -85,7 +85,7 @@ module.exports.newsCategory = async (req, res) => {
 //  lấy dữ liệu để làm dạng cây navigation cho danh mục thư viện
 module.exports.libraryCategory = async (req, res) => {
   try {
-    const libraryCategory = await LibraryCategory.find();
+    const libraryCategory = await GalleryCategory.find();
     const treeLibraryCategory = buildTree(libraryCategory);
     res.json(treeLibraryCategory);
   } catch (error) {

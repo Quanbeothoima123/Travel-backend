@@ -10,6 +10,7 @@ const filterRoute = require("./filter.route");
 const departPlace = require("./depart-place.route");
 const invoiceRoute = require("./invoice.route");
 const newsCategoryRoute = require("./news-category.route");
+const galleryCategoryRoute = require("./gallery-category.route");
 const newsRoute = require("./news.route");
 const aiRoute = require("./ai.route");
 const adminRoute = require("./admin.route");
@@ -29,6 +30,7 @@ module.exports = (app) => {
   app.use(version + "/invoice", invoiceRoute);
   app.use(version + "/news-category", newsCategoryRoute);
   app.use(version + "/news", newsRoute);
+  app.use(version + "/gallery-category", galleryCategoryRoute);
   app.use(version + "/ai", aiRoute);
   app.use(version, adminRoute);
 };
