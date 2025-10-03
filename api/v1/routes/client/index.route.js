@@ -17,6 +17,8 @@ const userSaveRoute = require("./user-save.route");
 const userShareRoute = require("./user-share.route");
 const commentRoute = require("./comment.route");
 const shortRoutes = require("./short.route");
+const galleryRoute = require("./gallery.route");
+const galleryCategoryRoute = require("./gallery-category.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -38,4 +40,6 @@ module.exports = (app) => {
   app.use(version + "/user-share", userShareRoute);
   app.use(version + "/comments", commentRoute);
   app.use(version + "/shorts", shortRoutes);
+  app.use(version + "/gallery", galleryRoute);
+  app.use(version + "/gallery-category", galleryCategoryRoute);
 };

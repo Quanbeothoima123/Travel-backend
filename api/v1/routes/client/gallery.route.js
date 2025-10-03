@@ -1,0 +1,13 @@
+const express = require("express");
+const router = express.Router();
+const controller = require("../../controllers/client/gallery.controller");
+router.get("/by-category/:categorySlug", controller.getGalleriesByCategory);
+router.get("/getAll/:categorySlug", controller.getAllGalleries);
+router.get("/detail/:slug", controller.getGalleryBySlug);
+router.post("/view/:id", controller.incrementView);
+router.post("/like/:id", controller.incrementLike);
+router.post("/like/:id", controller.incrementShare);
+router.get("/related/:id", controller.getRelatedGalleries);
+router.get("/popular/:id", controller.getPopularGalleries);
+router.get("/latest", controller.getLatestGalleries);
+module.exports = router;
