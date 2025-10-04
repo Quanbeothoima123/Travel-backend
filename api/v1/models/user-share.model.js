@@ -13,7 +13,7 @@ const UserShareSchema = new mongoose.Schema({
   },
   targetType: {
     type: String,
-    enum: ["article", "tour", "video", "news"],
+    enum: ["article", "tour", "video", "news", "gallery"],
     required: true,
   },
 

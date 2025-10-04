@@ -9,7 +9,7 @@ const UserViewSchema = new mongoose.Schema({
   },
   targetType: {
     type: String,
-    enum: ["article", "tour", "video"],
+    enum: ["article", "tour", "video","gallery"],
     required: true,
   },
 
