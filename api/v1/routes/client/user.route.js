@@ -18,7 +18,12 @@ router.post("/logout", controller.logout);
 router.get("/me", checkAuth, controller.getMe);
 router.get("/profile", checkAuth, controller.getUserProfile);
 router.patch("/profile", checkAuth, controller.updateUserProfile);
+
 router.post("/profile/setup", checkAuth, controller.setupProfile);
+
+router.get("/friends", checkAuth, controller.getFriends);
+
+router.get("/friends/suggestions", checkAuth, controller.getSuggestedFriends);
 
 router.delete("/friends/:friendId", checkAuth, controller.unfriend);
 

@@ -249,8 +249,8 @@ module.exports.getUserProfile = async (req, res) => {
       .select(
         "_id userName fullName customName email phone avatar address sex birthDay province ward friends nicknames friendRequestsSent friendRequestsReceived blockedUsers status createdAt updatedAt"
       )
-      .populate("province", "title _id")
-      .populate("ward", "title _id province")
+      .populate("province")
+      .populate("ward")
       .populate({
         path: "friends.user",
         select: "_id userName customName avatar",
@@ -398,6 +398,108 @@ module.exports.setupProfile = async (req, res) => {
   } catch (error) {
     console.error("Setup profile error:", error);
     res.status(500).json({ message: "Lỗi hệ thống" });
+  }
+};
+// ==================== GET SUGGESTED FRIENDS ====================
+// GET /api/v1/user/friends/suggestions - Get friend suggestions
+module.exports.getSuggestedFriends = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      page = 1,
+      limit = 20,
+      province,
+      ward,
+      birthYear,
+      sex,
+      userName,
+    } = req.query;
+
+    const currentUser = await User.findById(userId).lean();
+    if (!currentUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Lấy danh sách ID cần loại trừ
+    const friendIds = currentUser.friends.map((f) => f.user.toString());
+    const sentRequestIds = currentUser.friendRequestsSent.map((r) =>
+      r.user.toString()
+    );
+    const receivedRequestIds = currentUser.friendRequestsReceived.map((r) =>
+      r.user.toString()
+    );
+    const blockedIds = currentUser.blockedUsers.map((b) => b.user.toString());
+
+    const excludeIds = [
+      userId,
+      ...friendIds,
+      ...sentRequestIds,
+      ...receivedRequestIds,
+      ...blockedIds,
+    ];
+
+    // Query cơ bản: phải có userName và không phải anonymous
+    let query = {
+      _id: { $nin: excludeIds },
+      userName: { $exists: true, $ne: null, $ne: "" },
+      isAnonymous: { $ne: true },
+      deleted: { $ne: true },
+    };
+
+    // Apply filters
+    if (userName) {
+      query.$or = [
+        { userName: { $regex: userName, $options: "i" } },
+        { customName: { $regex: userName, $options: "i" } },
+      ];
+    }
+
+    if (province) {
+      query.province = province;
+    }
+
+    if (ward) {
+      query.ward = ward;
+    }
+
+    if (sex) {
+      query.sex = sex;
+    }
+
+    // Query với pagination
+    const total = await User.countDocuments(query);
+    const skip = (page - 1) * limit;
+
+    let users = await User.find(query)
+      .select("_id userName customName avatar province ward birthDay sex")
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    // Filter by birthYear nếu có
+    if (birthYear) {
+      users = users.filter((u) => {
+        if (!u.birthDay) return false;
+        const year = new Date(u.birthDay).getFullYear();
+        return year === parseInt(birthYear);
+      });
+    }
+
+    const nextPageExists = skip + users.length < total;
+
+    res.json({
+      success: true,
+      data: {
+        items: users,
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        nextPageExists,
+      },
+    });
+  } catch (error) {
+    console.error("Get suggested friends error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
   }
 };
 
