@@ -137,7 +137,7 @@ module.exports.createGallery = async (req, res) => {
       tags: tags || [],
       galleryCategory: galleryCategoryId, // BẮT BUỘC
       createdBy: {
-        _id: req.admin?.id || req.user?._id,
+        _id: req.admin?.id,
         time: new Date(),
       },
       views: 0,
@@ -499,7 +499,7 @@ module.exports.updateGallery = async (req, res) => {
       : [];
 
     gallery.updatedBy = {
-      _id: req.admin?.id || req.user?._id,
+      _id: req.admin?.id,
       time: new Date(),
     };
 
@@ -543,7 +543,7 @@ module.exports.deleteGallery = async (req, res) => {
 
     gallery.deleted = true;
     gallery.deletedBy = {
-      _id: req.admin?.id || req.user?._id,
+      _id: req.admin?.id,
       time: new Date(),
     };
     await gallery.save();
@@ -784,7 +784,7 @@ module.exports.toggleActive = async (req, res) => {
 
     gallery.active = !gallery.active;
     gallery.updatedBy = {
-      _id: req.admin?.id || req.user?._id,
+      _id: req.admin?.id,
       time: new Date(),
     };
     await gallery.save();
