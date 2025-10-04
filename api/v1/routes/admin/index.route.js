@@ -16,23 +16,29 @@ const newsRoute = require("./news.route");
 const aiRoute = require("./ai.route");
 const adminRoute = require("./admin.route");
 
+const { checkAuth } = require("../../../../middlewares/admin/authAdmin");
+
 module.exports = (app) => {
   const version = "/api/v1/admin";
-  app.use(version + "/tour-categories", tourCategoryRoute);
-  app.use(version + "/travel-time", travelTimeRoute);
-  app.use(version + "/hotel", hotelRoute);
-  app.use(version + "/term", termRoute);
-  app.use(version + "/vehicle", vehicleRoute);
-  app.use(version + "/frequency", frequencyRoute);
-  app.use(version + "/tours", tourRoute);
-  app.use(version + "/type-of-person", typeOfPersonRoute);
-  app.use(version + "/filter", filterRoute);
-  app.use(version + "/depart-place", departPlace);
-  app.use(version + "/invoice", invoiceRoute);
-  app.use(version + "/news-category", newsCategoryRoute);
-  app.use(version + "/news", newsRoute);
-  app.use(version + "/gallery-category", galleryCategoryRoute);
-  app.use(version + "/gallery", galleryRoute);
-  app.use(version + "/ai", aiRoute);
+
+  // Các route không cần checkAuth
   app.use(version, adminRoute);
+  app.use(version + "/ai", aiRoute);
+
+  // Các route cần checkAuth
+  app.use(version + "/tour-categories", checkAuth, tourCategoryRoute);
+  app.use(version + "/travel-time", checkAuth, travelTimeRoute);
+  app.use(version + "/hotel", checkAuth, hotelRoute);
+  app.use(version + "/term", checkAuth, termRoute);
+  app.use(version + "/vehicle", checkAuth, vehicleRoute);
+  app.use(version + "/frequency", checkAuth, frequencyRoute);
+  app.use(version + "/tours", checkAuth, tourRoute);
+  app.use(version + "/type-of-person", checkAuth, typeOfPersonRoute);
+  app.use(version + "/filter", checkAuth, filterRoute);
+  app.use(version + "/depart-place", checkAuth, departPlace);
+  app.use(version + "/invoice", checkAuth, invoiceRoute);
+  app.use(version + "/news-category", checkAuth, newsCategoryRoute);
+  app.use(version + "/news", checkAuth, newsRoute);
+  app.use(version + "/gallery-category", checkAuth, galleryCategoryRoute);
+  app.use(version + "/gallery", checkAuth, galleryRoute);
 };
