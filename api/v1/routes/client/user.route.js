@@ -18,5 +18,46 @@ router.post("/logout", controller.logout);
 router.get("/me", checkAuth, controller.getMe);
 router.get("/profile", checkAuth, controller.getUserProfile);
 router.patch("/profile", checkAuth, controller.updateUserProfile);
+router.post("/profile/setup", checkAuth, controller.setupProfile);
+
+router.delete("/friends/:friendId", checkAuth, controller.unfriend);
+
+router.get(
+  "/friend-requests/received",
+  checkAuth,
+  controller.getFriendRequestsReceived
+);
+
+router.get(
+  "/friend-requests/sent",
+  checkAuth,
+  controller.getFriendRequestsSent
+);
+
+router.post("/friend-requests/send", checkAuth, controller.sendFriendRequest);
+
+router.post(
+  "/friend-requests/accept",
+  checkAuth,
+  controller.acceptFriendRequest
+);
+
+router.post(
+  "/friend-requests/reject",
+  checkAuth,
+  controller.rejectFriendRequest
+);
+
+router.delete(
+  "/friend-requests/cancel",
+  checkAuth,
+  controller.cancelSentRequest
+);
+
+router.get("/blocked", checkAuth, controller.getBlockedUsers);
+
+router.post("/block", checkAuth, controller.blockUser);
+
+router.post("/unblock", checkAuth, controller.unblockUser);
 
 module.exports = router;
