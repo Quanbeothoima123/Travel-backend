@@ -244,9 +244,29 @@ module.exports.logout = (req, res) => {
 module.exports.getUserProfile = async (req, res) => {
   try {
     const userId = req.user.userId; // từ token decode
+
     const user = await User.findById(userId)
-      .populate("province")
-      .populate("ward")
+      .select(
+        "_id userName fullName customName email phone avatar address sex birthDay province ward friends nicknames friendRequestsSent friendRequestsReceived blockedUsers status createdAt updatedAt"
+      )
+      .populate("province", "title _id")
+      .populate("ward", "title _id province")
+      .populate({
+        path: "friends.user",
+        select: "_id userName customName avatar",
+      })
+      .populate({
+        path: "friendRequestsSent.user",
+        select: "_id userName customName avatar",
+      })
+      .populate({
+        path: "friendRequestsReceived.user",
+        select: "_id userName customName avatar",
+      })
+      .populate({
+        path: "blockedUsers.user",
+        select: "_id userName customName avatar",
+      })
       .lean();
 
     if (!user) {
@@ -254,7 +274,10 @@ module.exports.getUserProfile = async (req, res) => {
         .status(404)
         .json({ message: "Có lỗi trong quá trình lấy thông tin" });
     }
-    const { password, ...rest } = user;
+
+    // Loại bỏ các trường nhạy cảm
+    const { password, securityCode, deleted, deletedAt, ...rest } = user;
+
     res.json(rest);
   } catch (error) {
     console.error(error);
@@ -331,5 +354,574 @@ module.exports.updateUserProfile = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+//  Chức năng kết bạn
+// POST /api/v1/user/profile/setup
+module.exports.setupProfile = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { userName, customName, isAnonymous } = req.body;
+
+    // Validate userName
+    if (!userName || userName.trim().length < 3) {
+      return res.status(400).json({
+        message: "userName phải có ít nhất 3 ký tự",
+      });
+    }
+
+    // Check userName exists
+    const existingUser = await User.findOne({
+      userName: userName.trim(),
+      _id: { $ne: userId },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "userName đã được sử dụng",
+      });
+    }
+
+    // Update user
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        userName: userName.trim(),
+        customName: customName?.trim() || userName.trim(),
+        isAnonymous: !!isAnonymous,
+      },
+      { new: true, runValidators: true }
+    ).select("-password -securityCode");
+
+    res.json(updatedUser);
+  } catch (error) {
+    console.error("Setup profile error:", error);
+    res.status(500).json({ message: "Lỗi hệ thống" });
+  }
+};
+
+// ==================== GET FRIENDS ====================
+// GET /api/v1/user/friends - Get friends list
+module.exports.getFriends = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      page = 1,
+      limit = 20,
+      province,
+      ward,
+      birthYear,
+      sex,
+      userName,
+    } = req.query;
+
+    const user = await User.findById(userId)
+      .populate({
+        path: "friends.user",
+        select: "_id userName customName avatar province ward birthDay sex",
+        match: { isAnonymous: { $ne: true } },
+      })
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    let friends = user.friends.map((f) => f.user).filter(Boolean);
+
+    // Apply filters
+    if (userName) {
+      friends = friends.filter(
+        (f) =>
+          f.userName?.toLowerCase().includes(userName.toLowerCase()) ||
+          f.customName?.toLowerCase().includes(userName.toLowerCase())
+      );
+    }
+
+    if (province) {
+      friends = friends.filter((f) => f.province?.toString() === province);
+    }
+
+    if (ward) {
+      friends = friends.filter((f) => f.ward?.toString() === ward);
+    }
+
+    if (birthYear) {
+      friends = friends.filter((f) => {
+        if (!f.birthDay) return false;
+        const year = new Date(f.birthDay).getFullYear();
+        return year === parseInt(birthYear);
+      });
+    }
+
+    if (sex) {
+      friends = friends.filter((f) => f.sex === sex);
+    }
+
+    const total = friends.length;
+    const skip = (page - 1) * limit;
+    const items = friends.slice(skip, skip + parseInt(limit));
+    const nextPageExists = skip + items.length < total;
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        nextPageExists,
+      },
+    });
+  } catch (error) {
+    console.error("Get friends error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== GET RECEIVED FRIEND REQUESTS ====================
+// GET /api/v1/user/friend-requests/received - Get received friend requests
+module.exports.getFriendRequestsReceived = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { page = 1, limit = 20 } = req.query;
+
+    const user = await User.findById(userId)
+      .populate({
+        path: "friendRequestsReceived.user",
+        select: "_id userName customName avatar",
+      })
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const requests = user.friendRequestsReceived
+      .map((r) => ({
+        _id: r.user?._id,
+        userName: r.user?.userName,
+        customName: r.user?.customName,
+        avatar: r.user?.avatar,
+        message: r.message,
+        createdAt: r.createdAt,
+      }))
+      .filter((r) => r._id);
+
+    const total = requests.length;
+    const skip = (page - 1) * limit;
+    const items = requests.slice(skip, skip + parseInt(limit));
+    const nextPageExists = skip + items.length < total;
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        nextPageExists,
+      },
+    });
+  } catch (error) {
+    console.error("Get received requests error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== GET SENT FRIEND REQUESTS ====================
+// GET /api/v1/user/friend-requests/sent - Get sent friend requests
+module.exports.getFriendRequestsSent = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { page = 1, limit = 20 } = req.query;
+
+    const user = await User.findById(userId)
+      .populate({
+        path: "friendRequestsSent.user",
+        select: "_id userName customName avatar",
+      })
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const requests = user.friendRequestsSent
+      .map((r) => ({
+        _id: r.user?._id,
+        userName: r.user?.userName,
+        customName: r.user?.customName,
+        avatar: r.user?.avatar,
+        message: r.message,
+        createdAt: r.createdAt,
+      }))
+      .filter((r) => r._id);
+
+    const total = requests.length;
+    const skip = (page - 1) * limit;
+    const items = requests.slice(skip, skip + parseInt(limit));
+    const nextPageExists = skip + items.length < total;
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        nextPageExists,
+      },
+    });
+  } catch (error) {
+    console.error("Get sent requests error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== GET BLOCKED USERS ====================
+// GET /api/v1/user/blocked - Get blocked users
+module.exports.getBlockedUsers = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { page = 1, limit = 20 } = req.query;
+
+    const user = await User.findById(userId)
+      .populate({
+        path: "blockedUsers.user",
+        select: "_id userName customName avatar",
+      })
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const blocked = user.blockedUsers
+      .map((b) => ({
+        _id: b.user?._id,
+        userName: b.user?.userName,
+        customName: b.user?.customName,
+        avatar: b.user?.avatar,
+        reason: b.reason,
+        createdAt: b.createdAt,
+      }))
+      .filter((b) => b._id);
+
+    const total = blocked.length;
+    const skip = (page - 1) * limit;
+    const items = blocked.slice(skip, skip + parseInt(limit));
+    const nextPageExists = skip + items.length < total;
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        nextPageExists,
+      },
+    });
+  } catch (error) {
+    console.error("Get blocked users error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== SEND FRIEND REQUEST ====================
+// POST /api/v1/user/friend-requests/send - Send friend request
+module.exports.sendFriendRequest = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { toUserId, message } = req.body;
+
+    if (!toUserId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "toUserId is required" });
+    }
+
+    // Check if receiver exists and not anonymous
+    const receiver = await User.findById(toUserId);
+    if (!receiver) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Người dùng không tồn tại" });
+    }
+
+    if (receiver.isAnonymous) {
+      return res.status(403).json({
+        success: false,
+        error: "Không thể gửi lời mời đến người dùng ẩn danh",
+      });
+    }
+
+    // Check if already friends
+    const sender = await User.findById(userId);
+    const alreadyFriends = sender.friends.some(
+      (f) => f.user.toString() === toUserId
+    );
+    if (alreadyFriends) {
+      return res.status(400).json({ success: false, error: "Đã là bạn bè" });
+    }
+
+    // Check if request already sent
+    const alreadySent = sender.friendRequestsSent.some(
+      (r) => r.user.toString() === toUserId
+    );
+    if (alreadySent) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Đã gửi lời mời rồi" });
+    }
+
+    // Add to sender's sent requests
+    await User.findByIdAndUpdate(userId, {
+      $push: {
+        friendRequestsSent: {
+          user: toUserId,
+          message: message || "",
+          createdAt: new Date(),
+        },
+      },
+    });
+
+    // Add to receiver's received requests
+    await User.findByIdAndUpdate(toUserId, {
+      $push: {
+        friendRequestsReceived: {
+          user: userId,
+          message: message || "",
+          createdAt: new Date(),
+        },
+      },
+    });
+
+    res.json({ success: true, message: "Đã gửi lời mời kết bạn" });
+  } catch (error) {
+    console.error("Send friend request error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== ACCEPT FRIEND REQUEST ====================
+// POST /api/v1/user/friend-requests/accept - Accept friend request
+module.exports.acceptFriendRequest = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { fromUserId } = req.body;
+
+    if (!fromUserId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "fromUserId is required" });
+    }
+
+    // Add to both users' friends list
+    await User.findByIdAndUpdate(userId, {
+      $push: {
+        friends: {
+          user: fromUserId,
+          createdAt: new Date(),
+        },
+      },
+      $pull: {
+        friendRequestsReceived: { user: fromUserId },
+      },
+    });
+
+    await User.findByIdAndUpdate(fromUserId, {
+      $push: {
+        friends: {
+          user: userId,
+          createdAt: new Date(),
+        },
+      },
+      $pull: {
+        friendRequestsSent: { user: userId },
+      },
+    });
+
+    res.json({ success: true, message: "Đã chấp nhận lời mời kết bạn" });
+  } catch (error) {
+    console.error("Accept friend request error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== REJECT FRIEND REQUEST ====================
+// POST /api/v1/user/friend-requests/reject - Reject friend request
+module.exports.rejectFriendRequest = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { fromUserId } = req.body;
+
+    if (!fromUserId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "fromUserId is required" });
+    }
+
+    // Remove from receiver's received requests
+    await User.findByIdAndUpdate(userId, {
+      $pull: {
+        friendRequestsReceived: { user: fromUserId },
+      },
+    });
+
+    // Remove from sender's sent requests
+    await User.findByIdAndUpdate(fromUserId, {
+      $pull: {
+        friendRequestsSent: { user: userId },
+      },
+    });
+
+    res.json({ success: true, message: "Đã từ chối lời mời kết bạn" });
+  } catch (error) {
+    console.error("Reject friend request error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== CANCEL SENT REQUEST ====================
+// DELETE /api/v1/user/friend-requests/cancel - Cancel sent friend request
+module.exports.cancelSentRequest = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { toUserId } = req.body;
+
+    if (!toUserId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "toUserId is required" });
+    }
+
+    // Remove from sender's sent requests
+    await User.findByIdAndUpdate(userId, {
+      $pull: {
+        friendRequestsSent: { user: toUserId },
+      },
+    });
+
+    // Remove from receiver's received requests
+    await User.findByIdAndUpdate(toUserId, {
+      $pull: {
+        friendRequestsReceived: { user: userId },
+      },
+    });
+
+    res.json({ success: true, message: "Đã hủy lời mời kết bạn" });
+  } catch (error) {
+    console.error("Cancel sent request error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== UNFRIEND ====================
+// DELETE /api/v1/user/friends/:friendId - Unfriend
+module.exports.unfriend = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { friendId } = req.params;
+
+    if (!friendId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "friendId is required" });
+    }
+
+    // Remove from both users' friends list
+    await User.findByIdAndUpdate(userId, {
+      $pull: {
+        friends: { user: friendId },
+      },
+    });
+
+    await User.findByIdAndUpdate(friendId, {
+      $pull: {
+        friends: { user: userId },
+      },
+    });
+
+    res.json({ success: true, message: "Đã hủy kết bạn" });
+  } catch (error) {
+    console.error("Unfriend error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== BLOCK USER ====================
+
+// POST /api/v1/user/block - Block a user
+module.exports.blockUser = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { targetUserId, reason } = req.body;
+
+    if (!targetUserId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "targetUserId is required" });
+    }
+
+    // Add to blocked list
+    await User.findByIdAndUpdate(userId, {
+      $push: {
+        blockedUsers: {
+          user: targetUserId,
+          reason: reason || "",
+          createdAt: new Date(),
+        },
+      },
+      // Remove from friends if exists
+      $pull: {
+        friends: { user: targetUserId },
+        friendRequestsSent: { user: targetUserId },
+        friendRequestsReceived: { user: targetUserId },
+      },
+    });
+
+    // Remove from target's friends list
+    await User.findByIdAndUpdate(targetUserId, {
+      $pull: {
+        friends: { user: userId },
+        friendRequestsSent: { user: userId },
+        friendRequestsReceived: { user: userId },
+      },
+    });
+
+    res.json({ success: true, message: "Đã chặn người dùng" });
+  } catch (error) {
+    console.error("Block user error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
+  }
+};
+
+// ==================== UNBLOCK USER ====================
+// POST /api/v1/user/unblock - Unblock a user
+module.exports.unblockUser = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { targetUserId } = req.body;
+
+    if (!targetUserId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "targetUserId is required" });
+    }
+
+    // Remove from blocked list
+    await User.findByIdAndUpdate(userId, {
+      $pull: {
+        blockedUsers: { user: targetUserId },
+      },
+    });
+
+    res.json({ success: true, message: "Đã bỏ chặn người dùng" });
+  } catch (error) {
+    console.error("Unblock user error:", error);
+    res.status(500).json({ success: false, error: "Lỗi server" });
   }
 };
