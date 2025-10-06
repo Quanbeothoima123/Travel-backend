@@ -463,7 +463,7 @@ const getVideoUrl = async (req, res) => {
     }
 
     // THAY ĐỔI: Trả về proxy URL thay vì B2 URL
-    const playlistUrl = `${process.env.REACT_APP_DOMAIN_BACKEND}/api/v1/shorts/playlist/${shortId}`;
+    const playlistUrl = `${process.env.DOMAIN_BACKEND}/api/v1/shorts/playlist/${shortId}`;
 
     res.json({
       playlistUrl: playlistUrl,
