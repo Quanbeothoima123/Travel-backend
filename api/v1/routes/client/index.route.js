@@ -19,6 +19,8 @@ const commentRoute = require("./comment.route");
 const shortRoutes = require("./short.route");
 const galleryRoute = require("./gallery.route");
 const galleryCategoryRoute = require("./gallery-category.route");
+const chatRoute = require("./chat.route");
+const messageRoute = require("./message.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -42,4 +44,6 @@ module.exports = (app) => {
   app.use(version + "/shorts", shortRoutes);
   app.use(version + "/gallery", galleryRoute);
   app.use(version + "/gallery-category", galleryCategoryRoute);
+  app.use(version + "/chat", chatRoute);
+  app.use(version + "/message", messageRoute);
 };
