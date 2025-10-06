@@ -1,0 +1,10 @@
+const express = require("express");
+const router = express.Router();
+const controller = require("../../controllers/client/chat.controller");
+const { checkAuth } = require("../../../../middlewares/auth.middleware");
+router.get("/getChatList", checkAuth, controller.getChatList);
+router.post("/create-or-get", checkAuth, controller.createOrGetChat);
+router.get("/detail/:chatId", checkAuth, controller.getChatDetail);
+router.patch("/nickname/:chatId", checkAuth, controller.setNickname);
+router.delete("/delete/:chatId", checkAuth, controller.deleteChat);
+module.exports = router;
