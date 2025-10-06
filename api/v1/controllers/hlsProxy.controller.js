@@ -91,7 +91,7 @@ const proxyPlaylist = async (req, res) => {
     const modifiedLines = lines.map((line) => {
       const trimmed = line.trim();
       if (trimmed.endsWith(".ts")) {
-        return `${process.env.REACT_APP_DOMAIN_BACKEND}/api/v1/shorts/segment/${shortId}/${trimmed}`;
+        return `${process.env.DOMAIN_BACKEND}/api/v1/shorts/segment/${shortId}/${trimmed}`;
       }
       return line;
     });
