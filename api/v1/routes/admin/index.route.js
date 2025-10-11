@@ -14,6 +14,7 @@ const galleryCategoryRoute = require("./gallery-category.route");
 const galleryRoute = require("./gallery.route");
 const newsRoute = require("./news.route");
 const siteConfigRoute = require("./site-config.route");
+const aboutUsRoute = require("./about-us.route");
 const aiRoute = require("./ai.route");
 const adminRoute = require("./admin.route");
 
@@ -41,5 +42,7 @@ module.exports = (app) => {
   app.use(version + "/news-category", checkAuth, newsCategoryRoute);
   app.use(version + "/news", checkAuth, newsRoute);
   app.use(version + "/gallery-category", checkAuth, galleryCategoryRoute);
+  app.use(version + "/gallery", checkAuth, galleryRoute);
   app.use(version + "/site-config", checkAuth, siteConfigRoute);
+  app.use(version + "/about-us", checkAuth, aboutUsRoute);
 };
