@@ -668,25 +668,25 @@ module.exports.index = async (req, res) => {
       galleryCategory = "",
       sortBy = "createdAt",
       sortOrder = "desc",
-      mediaType = "all", // all, images, videos, both
+      mediaType = "all",
       page = 1,
       limit = 10,
     } = req.query;
 
-    // Build filter object
-    const filter = { deleted: false };
+    // ✅ Build filter với $and để kết hợp điều kiện
+    const conditions = [{ deleted: false }];
 
-    // Tìm kiếm theo tên (regex)
+    // Tìm kiếm theo tên
     if (keyword.trim()) {
-      filter.title = { $regex: keyword.trim(), $options: "i" };
+      conditions.push({ title: { $regex: keyword.trim(), $options: "i" } });
     }
 
     // Lọc theo tour
     if (tour) {
-      filter.tour = tour;
+      conditions.push({ tour });
     }
 
-    // Lọc theo tourCategory (bao gồm cả con)
+    // Lọc theo tourCategory
     if (tourCategory) {
       const descendantIds = await getAllDescendantIds(
         TourCategory,
@@ -694,10 +694,10 @@ module.exports.index = async (req, res) => {
         "parent"
       );
       const allCategoryIds = [tourCategory, ...descendantIds];
-      filter.tourCategory = { $in: allCategoryIds };
+      conditions.push({ tourCategory: { $in: allCategoryIds } });
     }
 
-    // Lọc theo galleryCategory (bao gồm cả con)
+    // Lọc theo galleryCategory
     if (galleryCategory) {
       const descendantIds = await getAllDescendantIds(
         GalleryCategory,
@@ -705,20 +705,27 @@ module.exports.index = async (req, res) => {
         "parent"
       );
       const allCategoryIds = [galleryCategory, ...descendantIds];
-      filter.galleryCategory = { $in: allCategoryIds };
+      conditions.push({ galleryCategory: { $in: allCategoryIds } });
     }
 
-    // Lọc theo loại media
+    // ✅ FIX: Lọc theo loại media - dùng $expr riêng
     if (mediaType === "images") {
-      filter.$expr = { $gt: [{ $size: "$images" }, 0] };
+      conditions.push({ $expr: { $gt: [{ $size: "$images" }, 0] } });
     } else if (mediaType === "videos") {
-      filter.$expr = { $gt: [{ $size: "$videos" }, 0] };
+      conditions.push({ $expr: { $gt: [{ $size: "$videos" }, 0] } });
     } else if (mediaType === "both") {
-      filter.$and = [
-        { $expr: { $gt: [{ $size: "$images" }, 0] } },
-        { $expr: { $gt: [{ $size: "$videos" }, 0] } },
-      ];
+      conditions.push({
+        $expr: {
+          $and: [
+            { $gt: [{ $size: "$images" }, 0] },
+            { $gt: [{ $size: "$videos" }, 0] },
+          ],
+        },
+      });
     }
+
+    // ✅ Tạo filter cuối cùng
+    const filter = conditions.length > 1 ? { $and: conditions } : conditions[0];
 
     // Sorting
     const sortOptions = {};
@@ -734,20 +741,22 @@ module.exports.index = async (req, res) => {
     const limitNum = parseInt(limit) || 10;
     const skip = (pageNum - 1) * limitNum;
 
-    // Get total count
-    const totalItems = await Gallery.countDocuments(filter);
-    const totalPages = Math.ceil(totalItems / limitNum);
+    // ✅ FIX: Dùng aggregate để count khi có $expr
+    const [countResult, galleries] = await Promise.all([
+      Gallery.aggregate([{ $match: filter }, { $count: "total" }]),
+      Gallery.find(filter)
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limitNum)
+        .populate("tour", "title slug")
+        .populate("tourCategory", "title slug")
+        .populate("galleryCategory", "title slug")
+        .populate("createdBy._id", "fullName email")
+        .lean(),
+    ]);
 
-    // Get galleries
-    const galleries = await Gallery.find(filter)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(limitNum)
-      .populate("tour", "title slug")
-      .populate("tourCategory", "title slug")
-      .populate("galleryCategory", "title slug")
-      .populate("createdBy._id", "fullName email")
-      .lean();
+    const totalItems = countResult[0]?.total || 0;
+    const totalPages = Math.ceil(totalItems / limitNum);
 
     return res.status(200).json({
       success: true,
