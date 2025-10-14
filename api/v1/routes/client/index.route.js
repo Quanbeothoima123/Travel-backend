@@ -21,6 +21,7 @@ const galleryRoute = require("./gallery.route");
 const galleryCategoryRoute = require("./gallery-category.route");
 const chatRoute = require("./chat.route");
 const messageRoute = require("./message.route");
+const siteConfigRoute = require("./site-config.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -46,4 +47,5 @@ module.exports = (app) => {
   app.use(version + "/gallery-category", galleryCategoryRoute);
   app.use(version + "/chat", chatRoute);
   app.use(version + "/message", messageRoute);
+  app.use(version + "/site-config", siteConfigRoute);
 };
