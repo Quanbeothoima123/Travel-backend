@@ -13,25 +13,25 @@ module.exports.login = async (req, res) => {
       return res.status(400).json({ message: "Thiếu email hoặc password" });
     }
 
-    const user = await AdminAccount.findOne({
+    const admin = await AdminAccount.findOne({
       email: email,
       deleted: false,
     }).populate("role_id");
 
-    if (!user) {
+    if (!admin) {
       return res.status(401).json({ message: "Tài khoản không tồn tại" });
     }
 
     const hashedPassword = md5(password);
-    if (user.password !== hashedPassword) {
+    if (admin.password !== hashedPassword) {
       return res.status(401).json({ message: "Sai mật khẩu" });
     }
 
     const token = jwt.sign(
       {
-        id: user._id,
-        email: user.email,
-        role: user.role_id ? user.role_id.title : "No Role",
+        id: admin._id,
+        email: admin.email,
+        role: admin.role_id ? admin.role_id.title : "No Role",
       },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES }
@@ -47,13 +47,13 @@ module.exports.login = async (req, res) => {
 
     return res.json({
       message: "Đăng nhập thành công",
-      user: {
-        id: user._id,
-        fullName: user.fullName,
-        email: user.email,
-        avatar: user.avatar,
-        role: user.role_id ? user.role_id.title : null,
-        permissions: user.role_id ? user.role_id.permissions : [],
+      admin: {
+        id: admin._id,
+        fullName: admin.fullName,
+        email: admin.email,
+        avatar: admin.avatar,
+        role: admin.role_id ? admin.role_id.title : null,
+        permissions: admin.role_id ? admin.role_id.permissions : [],
       },
     });
   } catch (error) {
@@ -67,11 +67,28 @@ module.exports.checkAuth = async (req, res) => {
   try {
     const token = req.cookies.adminToken;
     if (!token) {
-      return res.status(401).json({ message: "Chưa đăng nhập" });
+      return res
+        .status(401)
+        .json({ message: "Vui lòng đăng nhập tài khoản quản trị!" });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return res.json({ user: decoded });
+    // Giải mã token
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    // Tìm admin
+    const admin = await AdminAccount.findOne({
+      _id: decoded.id,
+      deleted: false,
+      status: "active",
+    }).select("-password");
+
+    if (!admin) {
+      return res.status(403).json({
+        success: false,
+        message: "Tài khoản quản trị không hợp lệ hoặc đã bị khóa",
+      });
+    }
+    return res.json({ admin: decoded });
   } catch (err) {
     return res.status(401).json({ message: "Token không hợp lệ" });
   }

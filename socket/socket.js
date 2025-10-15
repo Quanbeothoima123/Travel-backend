@@ -2,6 +2,9 @@
 const socketIO = require("socket.io");
 const Chat = require("../api/v1/models/chat.model");
 const Message = require("../api/v1/models/message.model");
+const SupportConversation = require("../api/v1/models/support-conversation.model");
+const SupportMessage = require("../api/v1/models/support-message.model");
+const User = require("../api/v1/models/user.model");
 
 function initializeSocket(server) {
   const io = socketIO(server, {
@@ -15,10 +18,14 @@ function initializeSocket(server) {
   io.use(async (socket, next) => {
     try {
       const userId = socket.handshake.auth.userId;
+      const userType = socket.handshake.auth.userType || "user"; // 👈 Lấy userType (user/admin)
+
       if (!userId) {
         return next(new Error("Authentication error"));
       }
+
       socket.userId = userId;
+      socket.userType = userType; // 👈 Lưu userType vào socket
       next();
     } catch (error) {
       next(new Error("Authentication error"));
@@ -26,10 +33,17 @@ function initializeSocket(server) {
   });
 
   io.on("connection", (socket) => {
-    console.log(`✅ User connected: ${socket.userId}`);
+    console.log(
+      `✅ ${socket.userType.toUpperCase()} connected: ${socket.userId}`
+    );
 
     // Join user vào room riêng
     socket.join(`user:${socket.userId}`);
+    if (socket.userType === "admin") {
+      socket.join("admin-room"); // 👈 Admin join vào room chung để nhận thông báo
+    }
+
+    // ==================== REGULAR CHAT (2 người) ====================
 
     // 🔹 Join vào chat room
     socket.on("join-chat", async (chatId) => {
@@ -59,7 +73,6 @@ function initializeSocket(server) {
       try {
         const { chatId, content, type = "text", replyTo } = data;
 
-        // Kiểm tra quyền
         const chat = await Chat.findOne({
           _id: chatId,
           participants: socket.userId,
@@ -69,7 +82,6 @@ function initializeSocket(server) {
           return socket.emit("error", { message: "Access denied" });
         }
 
-        // Tạo message
         const message = await Message.create({
           chatId,
           sender: socket.userId,
@@ -79,13 +91,11 @@ function initializeSocket(server) {
           seenBy: [socket.userId],
         });
 
-        // Cập nhật chat
         await Chat.findByIdAndUpdate(chatId, {
           lastMessage: message._id,
           lastMessageAt: new Date(),
         });
 
-        // Tăng unread count cho người khác
         const otherParticipants = chat.participants.filter(
           (p) => p.toString() !== socket.userId.toString()
         );
@@ -98,7 +108,6 @@ function initializeSocket(server) {
           );
         }
 
-        // Populate message
         const populatedMessage = await Message.findById(message._id)
           .populate("sender", "userName customName avatar")
           .populate({
@@ -109,10 +118,8 @@ function initializeSocket(server) {
             },
           });
 
-        // Gửi tin nhắn đến tất cả người trong chat
         io.to(`chat:${chatId}`).emit("new-message", populatedMessage);
 
-        // Gửi notification đến người khác để cập nhật sidebar
         otherParticipants.forEach((participantId) => {
           io.to(`user:${participantId}`).emit("chat-updated", {
             chatId,
@@ -196,12 +203,10 @@ function initializeSocket(server) {
         const message = await Message.findById(messageId);
         if (!message) return;
 
-        // Xóa reaction cũ
         message.reactions = message.reactions.filter(
           (r) => r.userId.toString() !== socket.userId.toString()
         );
 
-        // Thêm reaction mới
         if (reactionType) {
           message.reactions.push({
             userId: socket.userId,
@@ -248,8 +253,177 @@ function initializeSocket(server) {
       }
     });
 
+    // ==================== SUPPORT CHAT (User <-> Admin) ====================
+
+    // 🔹 Join vào support chat room
+    socket.on("join-support-chat", async (conversationId) => {
+      try {
+        const conversation = await SupportConversation.findById(conversationId);
+
+        if (!conversation) return;
+
+        // Kiểm tra quyền truy cập
+        const hasAccess =
+          socket.userType === "admin" ||
+          conversation.user.toString() === socket.userId.toString();
+
+        if (hasAccess) {
+          socket.join(`support:${conversationId}`);
+          console.log(
+            `${socket.userType.toUpperCase()} ${
+              socket.userId
+            } joined support chat ${conversationId}`
+          );
+        }
+      } catch (error) {
+        console.error("Join support chat error:", error);
+      }
+    });
+
+    // 🔹 Rời khỏi support chat room
+    socket.on("leave-support-chat", (conversationId) => {
+      socket.leave(`support:${conversationId}`);
+      console.log(
+        `${socket.userType.toUpperCase()} ${
+          socket.userId
+        } left support chat ${conversationId}`
+      );
+    });
+
+    // 🔹 Gửi tin nhắn support
+    socket.on("send-support-message", async (data) => {
+      try {
+        const { conversationId, content, type = "text" } = data;
+
+        const conversation = await SupportConversation.findById(conversationId);
+        if (!conversation) {
+          return socket.emit("error", { message: "Conversation not found" });
+        }
+
+        // Kiểm tra quyền gửi tin nhắn
+        const canSend =
+          socket.userType === "admin" ||
+          conversation.user.toString() === socket.userId.toString();
+
+        if (!canSend) {
+          return socket.emit("error", { message: "Access denied" });
+        }
+
+        // Tạo tin nhắn
+        const message = await SupportMessage.create({
+          conversationId,
+          sender: socket.userId,
+          senderType: socket.userType,
+          content,
+          type,
+          seenBy: [socket.userId],
+          isSystemMessage: false,
+        });
+
+        // Cập nhật conversation
+        conversation.lastMessage = {
+          content,
+          sender: socket.userId,
+          sentAt: new Date(),
+        };
+
+        // Tăng unreadCount cho người còn lại
+        if (socket.userType === "user") {
+          conversation.unreadCount.admin += 1;
+        } else {
+          conversation.unreadCount.user += 1;
+        }
+
+        await conversation.save();
+
+        // Populate message
+        const populatedMessage = await SupportMessage.findById(
+          message._id
+        ).populate("sender", "fullName avatar");
+
+        // Gửi tin nhắn đến tất cả người trong room
+        io.to(`support:${conversationId}`).emit(
+          "new-support-message",
+          populatedMessage
+        );
+
+        // Thông báo cho admin nếu user gửi
+        if (socket.userType === "user") {
+          io.to("admin-room").emit("support-conversation-updated", {
+            conversationId,
+            lastMessage: populatedMessage,
+            unreadCount: conversation.unreadCount.admin,
+          });
+        }
+
+        // Thông báo cho user nếu admin gửi
+        if (socket.userType === "admin") {
+          io.to(`user:${conversation.user}`).emit("support-message-received", {
+            conversationId,
+            message: populatedMessage,
+          });
+        }
+      } catch (error) {
+        console.error("Send support message error:", error);
+        socket.emit("error", { message: error.message });
+      }
+    });
+
+    // 🔹 Support typing indicator
+    socket.on("support-typing-start", ({ conversationId }) => {
+      socket.to(`support:${conversationId}`).emit("support-user-typing", {
+        userId: socket.userId,
+        userType: socket.userType,
+        conversationId,
+      });
+    });
+
+    socket.on("support-typing-stop", ({ conversationId }) => {
+      socket.to(`support:${conversationId}`).emit("support-user-stop-typing", {
+        userId: socket.userId,
+        userType: socket.userType,
+        conversationId,
+      });
+    });
+
+    // 🔹 Đánh dấu support messages đã đọc
+    socket.on("mark-support-as-read", async ({ conversationId }) => {
+      try {
+        await SupportMessage.updateMany(
+          {
+            conversationId,
+            sender: { $ne: socket.userId },
+            seenBy: { $ne: socket.userId },
+          },
+          { $addToSet: { seenBy: socket.userId } }
+        );
+
+        const conversation = await SupportConversation.findById(conversationId);
+        if (conversation) {
+          if (socket.userType === "user") {
+            conversation.unreadCount.user = 0;
+          } else {
+            conversation.unreadCount.admin = 0;
+          }
+          await conversation.save();
+        }
+
+        socket.to(`support:${conversationId}`).emit("support-messages-read", {
+          userId: socket.userId,
+          userType: socket.userType,
+          conversationId,
+        });
+      } catch (error) {
+        console.error("Mark support as read error:", error);
+      }
+    });
+
+    // ==================== DISCONNECT ====================
+
     socket.on("disconnect", () => {
-      console.log(`❌ User disconnected: ${socket.userId}`);
+      console.log(
+        `❌ ${socket.userType.toUpperCase()} disconnected: ${socket.userId}`
+      );
     });
   });
 

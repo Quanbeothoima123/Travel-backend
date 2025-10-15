@@ -46,8 +46,8 @@ routeAdmin(app);
 
 // 🔹 Thay app.listen bằng server.listen
 server.listen(port, () => {
-  console.log(`🚀 Server is running on port ${port}`);
-  console.log(`📡 Socket.IO is ready`);
+  console.log(`Server is running on port ${port}`);
+  console.log(`Socket.IO is ready`);
 });
 
 module.exports = { app, server, io };
