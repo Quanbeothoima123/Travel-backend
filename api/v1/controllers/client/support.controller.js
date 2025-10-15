@@ -3,31 +3,6 @@ const SupportConversation = require("../../models/support-conversation.model");
 const SupportMessage = require("../../models/support-message.model");
 const User = require("../../models/user.model");
 
-// [POST] Kiểm tra trạng thái đăng nhập
-module.exports.checkAuthStatus = async (req, res) => {
-  try {
-    if (!req.user.userId) {
-      return res.json({ success: false, isAuthenticated: false });
-    }
-    const userId = req.user.userId;
-
-    const user = await User.findById(userId).select("fullName email avatar");
-
-    res.json({
-      success: true,
-      isAuthenticated: true,
-      user: {
-        id: user._id,
-        fullName: user.fullName,
-        email: user.email,
-        avatar: user.avatar,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
 // [POST] Tạo cuộc trò chuyện mới
 module.exports.createConversation = async (req, res) => {
   try {
