@@ -69,7 +69,7 @@ module.exports.getAllConversations = async (req, res) => {
 module.exports.getConversationDetailAdmin = async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const adminId = req.userId;
+    const adminId = req.adminId;
 
     const conversation = await SupportConversation.findById(conversationId)
       .populate("user", "fullName email avatar phone")
@@ -103,7 +103,7 @@ module.exports.getConversationDetailAdmin = async (req, res) => {
 module.exports.joinConversation = async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const adminId = req.userId;
+    const adminId = req.adminId;
 
     const conversation = await SupportConversation.findById(conversationId);
     if (!conversation) {
@@ -144,7 +144,7 @@ module.exports.joinConversation = async (req, res) => {
 module.exports.closeConversationAdmin = async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const adminId = req.userId;
+    const adminId = req.adminId;
 
     const conversation = await SupportConversation.findById(conversationId);
     if (!conversation) {

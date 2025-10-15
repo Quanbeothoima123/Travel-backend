@@ -6,13 +6,12 @@ const User = require("../../models/user.model");
 // [POST] Kiểm tra trạng thái đăng nhập
 module.exports.checkAuthStatus = async (req, res) => {
   try {
-    if (!req.userId) {
+    if (!req.user.userId) {
       return res.json({ success: false, isAuthenticated: false });
     }
+    const userId = req.user.userId;
 
-    const user = await User.findById(req.userId).select(
-      "fullName email avatar"
-    );
+    const user = await User.findById(userId).select("fullName email avatar");
 
     res.json({
       success: true,
@@ -33,7 +32,7 @@ module.exports.checkAuthStatus = async (req, res) => {
 module.exports.createConversation = async (req, res) => {
   try {
     const { issueDescription, phoneNumber } = req.body;
-    const userId = req.userId;
+    const userId = req.user.userId;
 
     if (!userId) {
       return res
@@ -83,7 +82,7 @@ module.exports.createConversation = async (req, res) => {
 module.exports.getConversationHistory = async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const userId = req.userId;
+    const userId = req.user.userId;
 
     const conversation = await SupportConversation.findOne({
       _id: conversationId,
@@ -124,7 +123,7 @@ module.exports.getConversationHistory = async (req, res) => {
 module.exports.closeConversation = async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const userId = req.userId;
+    const userId = req.user.userId;
 
     const conversation = await SupportConversation.findOne({
       _id: conversationId,
@@ -169,7 +168,7 @@ module.exports.submitFeedback = async (req, res) => {
   try {
     const { conversationId } = req.params;
     const { isResolved, rating, comment } = req.body;
-    const userId = req.userId;
+    const userId = req.user.userId;
 
     const conversation = await SupportConversation.findOne({
       _id: conversationId,

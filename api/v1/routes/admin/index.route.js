@@ -17,7 +17,7 @@ const siteConfigRoute = require("./site-config.route");
 const aboutUsRoute = require("./about-us.route");
 const aiRoute = require("./ai.route");
 const adminRoute = require("./admin.route");
-
+const supportMessageRoute = require("./support.route");
 const { checkAuth } = require("../../../../middlewares/admin/authAdmin");
 
 module.exports = (app) => {
@@ -45,4 +45,5 @@ module.exports = (app) => {
   app.use(version + "/gallery", checkAuth, galleryRoute);
   app.use(version + "/site-config", checkAuth, siteConfigRoute);
   app.use(version + "/about-us", checkAuth, aboutUsRoute);
+  app.use(version + "/support", checkAuth, supportMessageRoute);
 };
