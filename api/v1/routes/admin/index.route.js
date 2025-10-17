@@ -21,6 +21,7 @@ const adminAccountRoute = require("./admin-account.route");
 const supportMessageRoute = require("./support.route");
 const roleRoute = require("./role.route");
 const permissionRoute = require("./permission.route");
+const userRoute = require("./user.route");
 const { checkAuth } = require("../../../../middlewares/admin/authAdmin");
 
 module.exports = (app) => {
@@ -52,4 +53,5 @@ module.exports = (app) => {
   app.use(version + "/role", checkAuth, roleRoute);
   app.use(version + "/permission", checkAuth, permissionRoute);
   app.use(version + "/admin-account", checkAuth, adminAccountRoute);
+  app.use(version + "/user", checkAuth, userRoute);
 };
