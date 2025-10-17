@@ -16,15 +16,18 @@ const newsRoute = require("./news.route");
 const siteConfigRoute = require("./site-config.route");
 const aboutUsRoute = require("./about-us.route");
 const aiRoute = require("./ai.route");
-const adminRoute = require("./admin.route");
+const authRoute = require("./auth.route");
+const adminAccountRoute = require("./admin-account.route");
 const supportMessageRoute = require("./support.route");
+const roleRoute = require("./role.route");
+const permissionRoute = require("./permission.route");
 const { checkAuth } = require("../../../../middlewares/admin/authAdmin");
 
 module.exports = (app) => {
   const version = "/api/v1/admin";
 
   // Các route không cần checkAuth
-  app.use(version, adminRoute);
+  app.use(version, authRoute);
   app.use(version + "/ai", aiRoute);
 
   // Các route cần checkAuth
@@ -46,4 +49,7 @@ module.exports = (app) => {
   app.use(version + "/site-config", checkAuth, siteConfigRoute);
   app.use(version + "/about-us", checkAuth, aboutUsRoute);
   app.use(version + "/support", checkAuth, supportMessageRoute);
+  app.use(version + "/role", checkAuth, roleRoute);
+  app.use(version + "/permission", checkAuth, permissionRoute);
+  app.use(version + "/admin-account", checkAuth, adminAccountRoute);
 };
