@@ -23,6 +23,7 @@ const chatRoute = require("./chat.route");
 const messageRoute = require("./message.route");
 const siteConfigRoute = require("./site-config.route");
 const supportMessageRoute = require("./support.route");
+const flightRoute = require("./flight.route");
 module.exports = (app) => {
   const version = "/api/v1";
   app.use(version, testRoute);
@@ -50,4 +51,5 @@ module.exports = (app) => {
   app.use(version + "/message", messageRoute);
   app.use(version + "/site-config", siteConfigRoute);
   app.use(version + "/support", supportMessageRoute);
+  app.use(version + "/flight", flightRoute);
 };
