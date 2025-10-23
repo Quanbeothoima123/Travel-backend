@@ -75,6 +75,7 @@ module.exports.getChatList = async (req, res) => {
 };
 
 // Route: POST /api/v1/chat/create-or-get
+// ✅ ĐÃ SỬA: Tìm trước, nếu không có thì tạo mới
 module.exports.createOrGetChat = async (req, res) => {
   try {
     const { otherUserId } = req.body;
@@ -96,28 +97,52 @@ module.exports.createOrGetChat = async (req, res) => {
       });
     }
 
-    // Kiểm tra chat đã tồn tại chưa
+    // ✅ QUAN TRỌNG: Sort participants để đảm bảo thứ tự nhất quán
+    const participants = [userId.toString(), otherUserId.toString()].sort();
+
+    // ✅ Bước 1: Tìm chat hiện có
     let chat = await Chat.findOne({
       type: "private",
-      participants: { $all: [userId, otherUserId], $size: 2 },
+      participants: { $all: participants, $size: 2 },
     })
       .populate("participants", "userName customName avatar")
       .populate("lastMessage");
 
+    // ✅ Bước 2: Nếu chưa có, tạo mới
     if (!chat) {
-      // Tạo chat mới
-      chat = await Chat.create({
-        participants: [userId, otherUserId],
-        type: "private",
-        unreadCount: [
-          { userId: userId, count: 0 },
-          { userId: otherUserId, count: 0 },
-        ],
-      });
+      try {
+        chat = await Chat.create({
+          participants: participants,
+          type: "private",
+          lastMessageAt: new Date(),
+          unreadCount: [
+            { userId: userId, count: 0 },
+            { userId: otherUserId, count: 0 },
+          ],
+        });
 
-      chat = await Chat.findById(chat._id)
-        .populate("participants", "userName customName avatar")
-        .populate("lastMessage");
+        // Populate sau khi tạo
+        chat = await Chat.findById(chat._id)
+          .populate("participants", "userName customName avatar")
+          .populate("lastMessage");
+      } catch (createError) {
+        // ✅ Nếu bị duplicate (race condition), tìm lại
+        if (createError.code === 11000) {
+          console.log("⚠️ Duplicate detected, finding existing chat...");
+          chat = await Chat.findOne({
+            type: "private",
+            participants: { $all: participants, $size: 2 },
+          })
+            .populate("participants", "userName customName avatar")
+            .populate("lastMessage");
+
+          if (!chat) {
+            throw new Error("Failed to create or find chat");
+          }
+        } else {
+          throw createError;
+        }
+      }
     }
 
     // Format response
@@ -150,7 +175,7 @@ module.exports.createOrGetChat = async (req, res) => {
   }
 };
 
-// Route: GET /api/v1/chat/:chatId
+// Route: GET /api/v1/chat/detail/:chatId
 module.exports.getChatDetail = async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -198,7 +223,7 @@ module.exports.getChatDetail = async (req, res) => {
   }
 };
 
-// Route: Patch /api/v1/chat/nickname/:chatId
+// Route: PATCH /api/v1/chat/nickname/:chatId
 module.exports.setNickname = async (req, res) => {
   try {
     const { chatId } = req.params;

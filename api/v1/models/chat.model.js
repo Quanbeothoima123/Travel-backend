@@ -1,4 +1,4 @@
-// models/Chat.js
+// models/chat.model.js
 const mongoose = require("mongoose");
 
 const ChatSchema = new mongoose.Schema(
@@ -20,14 +20,12 @@ const ChatSchema = new mongoose.Schema(
       default: Date.now,
     },
     deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    // Đếm tin nhắn chưa đọc cho từng user
     unreadCount: [
       {
         userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         count: { type: Number, default: 0 },
       },
     ],
-    // Cho group chat (optional)
     groupName: { type: String },
     groupAvatar: { type: String },
     admins: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
@@ -35,9 +33,18 @@ const ChatSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Index để tìm chat nhanh hơn
+//  Index tìm kiếm
 ChatSchema.index({ participants: 1 });
 ChatSchema.index({ lastMessageAt: -1 });
+
+//  QUAN TRỌNG: Unique index cho private chat
+ChatSchema.index(
+  { participants: 1, type: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { type: "private" },
+  }
+);
 
 const Chat = mongoose.model("Chat", ChatSchema, "chats");
 module.exports = Chat;

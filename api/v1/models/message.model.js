@@ -37,10 +37,9 @@ const MessageSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-// ✅ Indexes quan trọng
+//Indexes quan trọng
 MessageSchema.index({ chatId: 1, createdAt: -1 });
 MessageSchema.index({ sender: 1 });
-
 const Message = mongoose.model("Message", MessageSchema, "messages");
 
 module.exports = Message;
