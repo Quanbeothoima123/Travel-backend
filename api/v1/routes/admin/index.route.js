@@ -1,3 +1,4 @@
+const dashboardRoute = require("../admin/dashboard.route");
 const tourCategoryRoute = require("../admin/tour-category.route");
 const travelTimeRoute = require("../admin/travel-time.route");
 const hotelRoute = require("../admin/hotel.route");
@@ -32,6 +33,7 @@ module.exports = (app) => {
   app.use(version + "/ai", aiRoute);
 
   // Các route cần checkAuth
+  app.use(version + "/dashboard", checkAuth, dashboardRoute);
   app.use(version + "/tour-categories", checkAuth, tourCategoryRoute);
   app.use(version + "/travel-time", checkAuth, travelTimeRoute);
   app.use(version + "/hotel", checkAuth, hotelRoute);
