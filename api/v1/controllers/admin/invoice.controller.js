@@ -2,6 +2,8 @@
 const Invoice = require("../../models/invoice.model");
 const Tour = require("../../models/tour.model");
 const User = require("../../models/user.model");
+const telegramBot = require("../../../../helpers/telegramBot");
+
 // [GET] /api/v1/admin/invoice
 // Lấy danh sách invoice với filter, search, sort, pagination
 module.exports.index = async (req, res) => {
@@ -352,12 +354,32 @@ module.exports.create = async (req, res) => {
       note: note || "",
       typeOfPayment,
       totalPrice,
-      status: typeOfPayment === "cash" ? "pending" : "pending",
+      status: "pending", // Luôn luôn là pending khi mới tạo
       isPaid: false,
-      createdBy: req.adminId || null, // Lấy từ middleware auth
+      createdBy: req.adminId || null,
     });
 
     await newInvoice.save();
+
+    // Lấy thông tin tour để gửi thông báo
+    const tour = await Tour.findById(tourId).select("title").lean();
+
+    // 🔔 GỬI THÔNG BÁO TELEGRAM - ĐƠN HÀNG MỚI (CHƯA THANH TOÁN)
+    telegramBot
+      .notifyNewOrder({
+        invoiceCode: newInvoice.invoiceCode,
+        nameOfUser: newInvoice.nameOfUser,
+        phoneNumber: newInvoice.phoneNumber,
+        email: newInvoice.email,
+        totalPrice: newInvoice.totalPrice,
+        totalPeople: newInvoice.totalPeople,
+        tourTitle: tour?.title || "N/A",
+        typeOfPayment: newInvoice.typeOfPayment,
+        createdAt: newInvoice.createdAt,
+      })
+      .catch((err) => {
+        console.error("⚠️ Lỗi gửi thông báo Telegram:", err.message);
+      });
 
     res.status(201).json({
       message: "Tạo hóa đơn thành công",
@@ -386,6 +408,17 @@ module.exports.updateStatus = async (req, res) => {
       });
     }
 
+    // Lấy invoice cũ để so sánh trạng thái
+    const oldInvoice = await Invoice.findById(id)
+      .populate("tourId", "title")
+      .lean();
+
+    if (!oldInvoice) {
+      return res.status(404).json({
+        message: "Không tìm thấy hóa đơn",
+      });
+    }
+
     const updateData = {
       status,
     };
@@ -402,10 +435,61 @@ module.exports.updateStatus = async (req, res) => {
       new: true,
     });
 
-    if (!invoice) {
-      return res.status(404).json({
-        message: "Không tìm thấy hóa đơn",
-      });
+    // 🔔 GỬI THÔNG BÁO TELEGRAM - THANH TOÁN THÀNH CÔNG
+    // Chỉ gửi khi chuyển từ pending → paid
+    if (status === "paid" && oldInvoice.status === "pending") {
+      telegramBot
+        .notifyPaymentSuccess({
+          invoiceCode: invoice.invoiceCode,
+          nameOfUser: invoice.nameOfUser,
+          totalPrice: invoice.totalPrice,
+          typeOfPayment: invoice.typeOfPayment,
+          transactionId: invoice.transactionId,
+          datePayment: invoice.datePayment,
+        })
+        .catch((err) => {
+          console.error("⚠️ Lỗi gửi thông báo Telegram:", err.message);
+        });
+    }
+
+    // 🔔 GỬI THÔNG BÁO KHI HUỶ ĐƠN
+    if (status === "canceled") {
+      telegramBot
+        .broadcastMessage(
+          `
+⚠️ <b>ĐƠN HÀNG BỊ HUỶ</b>
+
+📋 <b>Mã đơn:</b> ${invoice.invoiceCode}
+👤 <b>Khách hàng:</b> ${invoice.nameOfUser}
+💰 <b>Giá trị:</b> ${(invoice.totalPrice / 1000000).toFixed(1)} triệu VNĐ
+📅 <b>Thời gian:</b> ${new Date().toLocaleString("vi-VN")}
+
+❌ Đơn hàng đã bị huỷ
+      `.trim()
+        )
+        .catch((err) => {
+          console.error("⚠️ Lỗi gửi thông báo Telegram:", err.message);
+        });
+    }
+
+    // 🔔 GỬI THÔNG BÁO KHI HOÀN TIỀN
+    if (status === "refunded") {
+      telegramBot
+        .broadcastMessage(
+          `
+💸 <b>HOÀN TIỀN</b>
+
+📋 <b>Mã đơn:</b> ${invoice.invoiceCode}
+👤 <b>Khách hàng:</b> ${invoice.nameOfUser}
+💰 <b>Số tiền hoàn:</b> ${(invoice.totalPrice / 1000000).toFixed(1)} triệu VNĐ
+📅 <b>Thời gian:</b> ${new Date().toLocaleString("vi-VN")}
+
+♻️ Đã hoàn tiền cho khách hàng
+      `.trim()
+        )
+        .catch((err) => {
+          console.error("⚠️ Lỗi gửi thông báo Telegram:", err.message);
+        });
     }
 
     res.json({
@@ -444,13 +528,45 @@ module.exports.updateTourStatus = async (req, res) => {
       id,
       { tourStatus },
       { new: true }
-    );
+    ).populate("tourId", "title");
 
     if (!invoice) {
       return res.status(404).json({
         message: "Không tìm thấy hóa đơn",
       });
     }
+
+    // 🔔 GỬI THÔNG BÁO TELEGRAM - THAY ĐỔI TRẠNG THÁI TOUR
+    const statusEmoji = {
+      "not-started": "⏳",
+      "on-tour": "🚌",
+      completed: "✅",
+      "no-show": "❌",
+    };
+
+    const statusName = {
+      "not-started": "Chưa bắt đầu",
+      "on-tour": "Đang diễn ra",
+      completed: "Hoàn thành",
+      "no-show": "Khách vắng mặt",
+    };
+
+    telegramBot
+      .broadcastMessage(
+        `
+${statusEmoji[tourStatus]} <b>CẬP NHẬT TRẠNG THÁI TOUR</b>
+
+📋 <b>Mã đơn:</b> ${invoice.invoiceCode}
+🎫 <b>Tour:</b> ${invoice.tourId?.title || "N/A"}
+👤 <b>Khách hàng:</b> ${invoice.nameOfUser}
+
+📊 <b>Trạng thái mới:</b> ${statusName[tourStatus]}
+⏰ <b>Thời gian:</b> ${new Date().toLocaleString("vi-VN")}
+    `.trim()
+      )
+      .catch((err) => {
+        console.error("⚠️ Lỗi gửi thông báo Telegram:", err.message);
+      });
 
     res.json({
       message: "Cập nhật trạng thái tour thành công",
@@ -494,6 +610,25 @@ module.exports.cancel = async (req, res) => {
     }
 
     await invoice.save();
+
+    // 🔔 GỬI THÔNG BÁO TELEGRAM - HUỶ BOOKING
+    telegramBot
+      .broadcastMessage(
+        `
+🚫 <b>HUỶ BOOKING</b>
+
+📋 <b>Mã đơn:</b> ${invoice.invoiceCode}
+👤 <b>Khách hàng:</b> ${invoice.nameOfUser}
+💰 <b>Giá trị:</b> ${(invoice.totalPrice / 1000000).toFixed(1)} triệu VNĐ
+${reason ? `📝 <b>Lý do:</b> ${reason}` : ""}
+📅 <b>Thời gian:</b> ${new Date().toLocaleString("vi-VN")}
+
+❌ Booking đã bị huỷ
+    `.trim()
+      )
+      .catch((err) => {
+        console.error("⚠️ Lỗi gửi thông báo Telegram:", err.message);
+      });
 
     res.json({
       message: "Hủy booking thành công",

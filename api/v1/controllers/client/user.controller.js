@@ -4,6 +4,7 @@ const Otp = require("../../models/otp.model"); // nhớ import Otp
 const Ward = require("../../models/ward.model");
 const Province = require("../../models/province.model");
 const sendOtp = require("../../../../helpers/otpGenerator");
+const telegramBot = require("../../../../helpers/telegramBot");
 const jwt = require("jsonwebtoken");
 const JWT_SECRET = process.env.JWT_SECRET;
 // [POST] /api/v1/user/register
@@ -50,7 +51,6 @@ module.exports.register = async (req, res) => {
 module.exports.auth = async (req, res) => {
   try {
     const { userId, otp, type } = req.body;
-
     const otpRecord = await Otp.findOne({ userId }).select("code expireAt");
 
     if (!otpRecord) {
@@ -67,17 +67,37 @@ module.exports.auth = async (req, res) => {
       return res.status(400).json({ message: "Mã OTP không chính xác", type });
     }
 
-    // Nếu OTP đúng, cập nhật user thành activer
+    // Nếu OTP đúng, cập nhật user thành active
     await User.updateOne({ _id: userId }, { status: "active" });
 
     // Xoá OTP đã dùng
     await Otp.deleteMany({ userId });
 
+    // 🔔 GỬI THÔNG BÁO TELEGRAM
+    const user = await User.findById(userId).select(
+      "fullName email phone createdAt"
+    );
+    if (user) {
+      // Gửi bất đồng bộ, không chờ response để không ảnh hưởng tốc độ API
+      telegramBot
+        .notifyUserRegistration({
+          userId: user._id,
+          email: user.email,
+          fullName: user.fullName,
+          phone: user.phone,
+          createdAt: user.createdAt,
+        })
+        .catch((err) => {
+          console.error("⚠️ Không thể gửi thông báo Telegram:", err.message);
+          // Không throw error để không làm gián đoạn flow chính
+        });
+    }
+
     return res.json({
       code: 200,
       message: "Xác thực thành công",
       userId,
-      type, // 👈 Giữ lại type để frontend biết đang xử lý gì
+      type,
     });
   } catch (error) {
     console.error(error);
@@ -124,14 +144,17 @@ module.exports.resendOtp = async (req, res) => {
 module.exports.reAuth = async (req, res) => {
   try {
     const { email } = req.body;
+
     if (!email) {
       return res.status(400).json({ message: "Thiếu email" });
     }
 
     const user = await User.findOne({ email });
+
     if (!user) {
       return res.status(404).json({ message: "Email không tồn tại" });
     }
+
     if (user.status === "active") {
       return res.status(404).json({
         message: "Tài khoản đã xác thực vui lòng không lảng vảng ở đây!",
@@ -144,6 +167,17 @@ module.exports.reAuth = async (req, res) => {
     // Gửi lại OTP mới
     const subject = "Mã xác thực lại tài khoản";
     await sendOtp.generateAndSendOtp(user._id, subject, email);
+
+    // 🔔 GỬI THÔNG BÁO TELEGRAM
+    telegramBot
+      .notifyReAuthRequest({
+        userId: user._id,
+        email: user.email,
+        fullName: user.fullName,
+      })
+      .catch((err) => {
+        console.error("⚠️ Không thể gửi thông báo Telegram:", err.message);
+      });
 
     return res.json({
       code: 200,
