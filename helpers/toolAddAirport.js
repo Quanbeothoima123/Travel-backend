@@ -7,8 +7,7 @@ const Airport = require("../api/v1/models/airport.model");
 // ✅ CẤU HÌNH - Thay đổi ở đây
 const CONFIG = {
   // Thay bằng MongoDB connection string của bạn
-  MONGODB_URI:
-    "mongodb+srv://phimanhnamquan:E-M$!2Uq-TaYYh6@cluster0.p3vpqlr.mongodb.net/blockchain-wallet?retryWrites=true&w=majority&appName=Cluster0",
+  MONGODB_URI: process.env.MONGODB_URI,
 
   // File dữ liệu airports (đặt file airports.txt vào thư mục data/)
   DATA_FILE: path.join(__dirname, "../data/airports.txt"),
