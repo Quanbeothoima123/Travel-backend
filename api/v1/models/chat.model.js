@@ -33,18 +33,10 @@ const ChatSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-//  Index tìm kiếm
+// ✅ Chỉ giữ index để tìm kiếm nhanh, KHÔNG unique
 ChatSchema.index({ participants: 1 });
 ChatSchema.index({ lastMessageAt: -1 });
-
-//  QUAN TRỌNG: Unique index cho private chat
-ChatSchema.index(
-  { participants: 1, type: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { type: "private" },
-  }
-);
+ChatSchema.index({ type: 1 });
 
 const Chat = mongoose.model("Chat", ChatSchema, "chats");
 module.exports = Chat;
