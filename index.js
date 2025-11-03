@@ -8,7 +8,7 @@ const cors = require("cors");
 require("dotenv").config();
 const routeAdmin = require("./api/v1/routes/admin/index.route");
 const routesApiVer1 = require("./api/v1/routes/client/index.route");
-
+const DOMAIN_WEBSITE = process.env.DOMAIN_WEBSITE || "http://localhost:3000";
 // 🔹 Import Socket.IO setup
 const initializeSocket = require("./socket/socket");
 
@@ -32,7 +32,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: DOMAIN_WEBSITE,
     credentials: true,
   })
 );
