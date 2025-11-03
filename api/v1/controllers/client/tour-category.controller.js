@@ -19,7 +19,7 @@ exports.getTourCategoryBySlug = async (req, res) => {
 module.exports.getAllCategories = async (req, res) => {
   try {
     const { tree } = req.query;
-    const filter = { deleted: false, active: true };
+    const filter = { deleted: false,active: true };
     const categories = await TourCategory.find(filter).sort({ createdAt: -1 });
     if (tree === "true") {
       return res.json(buildTree(categories));
