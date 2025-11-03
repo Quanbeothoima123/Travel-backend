@@ -90,9 +90,21 @@ module.exports.detailTour = async (req, res) => {
 // [GET] /api/v1/tours/search-combined
 module.exports.searchToursCombined = async (req, res) => {
   try {
-    const { category, query, page = 1, limit = 10 } = req.query;
+    const {
+      category,
+      query,
+      page = 1,
+      limit = 10,
+      minPrice,
+      maxPrice,
+      departPlace,
+      filters,
+      vehicles,
+    } = req.query;
 
     const filter = {};
+
+    // Category filter
     if (category) {
       const rootCategory = await TourCategory.findOne({
         slug: category,
@@ -100,7 +112,6 @@ module.exports.searchToursCombined = async (req, res) => {
       if (!rootCategory) {
         return res.status(404).json({ message: "Không tìm thấy danh mục" });
       }
-
       const childIds = await getAllDescendantIds(
         TourCategory,
         rootCategory._id
@@ -112,24 +123,74 @@ module.exports.searchToursCombined = async (req, res) => {
       filter.categoryId = { $in: allCategoryIds };
     }
 
+    // Query filter
     let queryFilter = {};
     if (query) {
       const regex = new RegExp(query.trim().split(/\s+/).join(".*"), "i");
       queryFilter.title = { $regex: regex };
     }
 
+    // ✅ FIXED: Price filter with correct MongoDB syntax
+    if (minPrice || maxPrice) {
+      filter.prices = {};
+      if (minPrice) {
+        const minPriceNum = parseInt(minPrice, 10);
+        if (!isNaN(minPriceNum)) {
+          filter.prices.$gte = minPriceNum;
+        }
+      }
+      if (maxPrice) {
+        const maxPriceNum = parseInt(maxPrice, 10);
+        if (!isNaN(maxPriceNum)) {
+          filter.prices.$lte = maxPriceNum;
+        }
+      }
+    }
+
+    // Depart place filter
+    if (departPlace) {
+      const departPlaceObj = await DepartPlace.findOne({
+        slug: departPlace,
+      }).lean();
+      if (departPlaceObj) {
+        filter.departPlaceId = departPlaceObj._id;
+      }
+    }
+
+    // Filters (tour characteristics)
+    if (filters && filters.length > 0) {
+      const filterArray = Array.isArray(filters) ? filters : [filters];
+      const filterIds = await Filter.find({ slug: { $in: filterArray } })
+        .select("_id")
+        .lean();
+      if (filterIds.length > 0) {
+        filter.filterId = { $in: filterIds.map((f) => f._id) };
+      }
+    }
+
+    // Vehicles filter
+    if (vehicles && vehicles.length > 0) {
+      const vehicleArray = Array.isArray(vehicles) ? vehicles : [vehicles];
+      const vehicleIds = await Vehicle.find({ slug: { $in: vehicleArray } })
+        .select("_id")
+        .lean();
+      if (vehicleIds.length > 0) {
+        filter.vehicleId = { $in: vehicleIds.map((v) => v._id) };
+      }
+    }
+
     const baseFilter = { ...filter, ...queryFilter };
 
-    // pagination
+    // Pagination
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
     const skip = (pageNum - 1) * limitNum;
 
-    // query chính
+    // Main query
     let [tours, totalItems] = await Promise.all([
       Tour.find(baseFilter)
         .select(
-          "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type"
+          "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type departPlaceId filterId"
         )
         .skip(skip)
         .limit(limitNum)
@@ -137,13 +198,14 @@ module.exports.searchToursCombined = async (req, res) => {
       Tour.countDocuments(baseFilter),
     ]);
 
-    // ✅ fallback: nếu có query nhưng kết quả = 0 → lấy lại theo category
+    // Fallback: if query has no results but category exists, search by category only
     if (query && tours.length === 0 && category) {
-      const fallbackFilter = { ...filter }; // chỉ category, bỏ query
+      const fallbackFilter = { ...filter };
+      delete fallbackFilter.title;
       [tours, totalItems] = await Promise.all([
         Tour.find(fallbackFilter)
           .select(
-            "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type"
+            "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type departPlaceId filterId"
           )
           .skip(skip)
           .limit(limitNum)
@@ -154,7 +216,7 @@ module.exports.searchToursCombined = async (req, res) => {
 
     const totalPages = Math.ceil(totalItems / limitNum);
 
-    // enrich tours
+    // Enrich tours with related data
     for (let item of tours) {
       item.vehicle = [];
       const travelTime = await TravelTime.findById(item.travelTimeId).lean();
@@ -162,15 +224,14 @@ module.exports.searchToursCombined = async (req, res) => {
         item.day = travelTime.day;
         item.night = travelTime.night;
       }
-
-      const listVehicle = await Vehicle.find({ _id: item.vehicleId }).lean();
+      const listVehicle = await Vehicle.find({
+        _id: { $in: item.vehicleId },
+      }).lean();
       if (listVehicle.length > 0) {
         item.vehicle = listVehicle.map((vehicle) => vehicle.name);
       }
-
       const frequencyObject = await Frequency.findById(item.frequency).lean();
       item.frequency = frequencyObject?.title || "";
-
       const hotelObject = await Hotel.findById(item.hotelId)
         .select("star")
         .lean();
@@ -191,7 +252,6 @@ module.exports.searchToursCombined = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
 // Lấy danh sách tour theo category.slug (bao gồm category con)
 module.exports.tourListByCategory = async (req, res) => {
   try {
