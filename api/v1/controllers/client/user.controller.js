@@ -261,11 +261,23 @@ module.exports.login = async (req, res) => {
 // [GET] /api/v1/user/me
 module.exports.getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select(
-      "fullName email avatar"
-    );
-    res.json(user);
+    const user = await User.findById(req.user.userId)
+      .populate(
+        "ward",
+        "name type name_with_type path path_with_type code parent_code"
+      )
+      .populate("province", "name type name_with_type code slug")
+      .select(
+        "-password -securityCode -deleted -deletedAt -__v -friendRequestsSent -friendRequestsReceived -blockedUsers"
+      );
+
+    if (!user) {
+      return res.status(404).json({ message: "Không tìm thấy người dùng" });
+    }
+
+    res.status(200).json(user);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Lỗi server" });
   }
 };
