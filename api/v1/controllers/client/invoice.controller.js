@@ -8,6 +8,8 @@ const { createMomoPayment } = require("../../../../utils/momo");
 const { JWT_SECRET } = process.env;
 const emailService = require("../../../../services/emailService");
 const TourCategory = require("../../models/tour-category.model");
+const DOMAIN_WEBSITE = process.env.DOMAIN_WEBSITE || "http://localhost:3000";
+const DOMAIN_BACKEND = process.env.DOMAIN_BACKEND || "http://localhost:5000";
 // [POST] /api/v1/invoices
 module.exports.createInvoice = async (req, res) => {
   try {
@@ -177,8 +179,8 @@ module.exports.payWithMomo = async (req, res) => {
       amount: totalPrice,
       orderId: invoice._id.toString(),
       orderInfo: `Thanh toán đơn hàng ${invoiceCode}`,
-      redirectUrl: "http://localhost:3000/payment/momo/result",
-      ipnUrl: "https://3f953d48ebe6.ngrok-free.app/api/v1/invoice/momo-ipn",
+      redirectUrl: `${DOMAIN_WEBSITE}/payment/momo/result`,
+      ipnUrl: `${DOMAIN_BACKEND}/api/v1/invoice/momo-ipn`,
     });
 
     if (momoRes?.payUrl) {
