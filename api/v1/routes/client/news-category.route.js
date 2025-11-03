@@ -5,5 +5,5 @@ router.get(
   "/get-news-category-by-slug/:newsCategorySlug",
   controller.getNewsCategoryBySlug
 );
-
+router.get("/getAll", controller.getAllNewCategories);
 module.exports = router;

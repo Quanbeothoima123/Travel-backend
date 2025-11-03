@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/client/gallery.controller");
 router.get("/by-category/:categorySlug", controller.getGalleriesByCategory);
-router.get("/getAll/:categorySlug", controller.getAllGalleries);
+router.get("/all", controller.getAllGalleries);
 router.get("/detail/:slug", controller.getGalleryBySlug);
 router.post("/view/:id", controller.incrementView);
 router.post("/like/:id", controller.incrementLike);
