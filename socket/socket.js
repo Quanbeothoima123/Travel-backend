@@ -9,7 +9,7 @@ const User = require("../api/v1/models/user.model");
 function initializeSocket(server) {
   const io = socketIO(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || "http://localhost:3000",
+      origin: process.env.DOMAIN_WEBSITE || "http://localhost:3000",
       credentials: true,
     },
   });
