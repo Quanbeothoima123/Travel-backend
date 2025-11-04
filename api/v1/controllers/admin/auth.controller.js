@@ -38,12 +38,13 @@ module.exports.login = async (req, res) => {
       { expiresIn: JWT_EXPIRES }
     );
 
-    // Gửi token qua cookie HTTP-only
+    // 🔹 Cookie config cho cross-origin
     res.cookie("adminToken", token, {
-      httpOnly: true, // ngăn JS đọc cookie
-      secure: process.env.NODE_ENV === "production", // chỉ HTTPS khi production
-      sameSite: "Strict", // tránh CSRF
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+      httpOnly: true,
+      secure: true, //  Bắt buộc true vì cả Vercel & Render đều HTTPS
+      sameSite: "None", //  Thay đổi từ 'Strict' sang 'None' cho cross-origin
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/", // Đảm bảo cookie available cho tất cả routes
     });
 
     return res.json({
@@ -62,7 +63,6 @@ module.exports.login = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
 // routes/admin.js
 module.exports.checkAuth = async (req, res) => {
   try {

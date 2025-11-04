@@ -32,10 +32,14 @@ app.set("io", io);
 app.use(cookieParser(""));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Thêm methods và allowedHeaders cho chắc
 app.use(
   cors({
     origin: [DOMAIN_WEBSITE, DOMAIN_WEBSITE_ADMIN],
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], //  Thêm OPTIONS
+    allowedHeaders: ["Content-Type", "Authorization"], //  Thêm headers được phép
   })
 );
 
