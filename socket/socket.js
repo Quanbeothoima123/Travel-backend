@@ -5,11 +5,13 @@ const Message = require("../api/v1/models/message.model");
 const SupportConversation = require("../api/v1/models/support-conversation.model");
 const SupportMessage = require("../api/v1/models/support-message.model");
 const User = require("../api/v1/models/user.model");
-
+const DOMAIN_WEBSITE = process.env.DOMAIN_WEBSITE || "http://localhost:3000";
+const DOMAIN_WEBSITE_ADMIN =
+  process.env.DOMAIN_WEBSITE_ADMIN || "http://localhost:3001";
 function initializeSocket(server) {
   const io = socketIO(server, {
     cors: {
-      origin: process.env.DOMAIN_WEBSITE || "http://localhost:3000",
+      origin: [DOMAIN_WEBSITE, DOMAIN_WEBSITE_ADMIN],
       credentials: true,
     },
   });

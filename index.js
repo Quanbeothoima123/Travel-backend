@@ -9,6 +9,8 @@ require("dotenv").config();
 const routeAdmin = require("./api/v1/routes/admin/index.route");
 const routesApiVer1 = require("./api/v1/routes/client/index.route");
 const DOMAIN_WEBSITE = process.env.DOMAIN_WEBSITE || "http://localhost:3000";
+const DOMAIN_WEBSITE_ADMIN =
+  process.env.DOMAIN_WEBSITE_ADMIN || "http://localhost:3001";
 // 🔹 Import Socket.IO setup
 const initializeSocket = require("./socket/socket");
 
@@ -32,7 +34,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: DOMAIN_WEBSITE,
+    origin: [DOMAIN_WEBSITE, DOMAIN_WEBSITE_ADMIN],
     credentials: true,
   })
 );
