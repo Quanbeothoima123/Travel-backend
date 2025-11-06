@@ -1,9 +1,13 @@
 const Vehicle = require("../../models/vehicle.model");
+// Controller getAll cho Vehicle
 module.exports.getAll = async (req, res) => {
   try {
-    const vehicles = await Vehicle.find();
-    res.status(200).json(vehicles);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const vehicles = await Vehicle.find({ deleted: { $ne: true } });
+    res.json({
+      success: true,
+      data: vehicles, // ✅ Wrap trong object
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };

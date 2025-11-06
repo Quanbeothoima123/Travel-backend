@@ -1,9 +1,13 @@
 const Frequency = require("../../models/frequency.model");
+// Controller getAll cho Frequency
 module.exports.getAll = async (req, res) => {
   try {
-    const frequencies = await Frequency.find();
-    res.status(200).json(frequencies);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const frequencies = await Frequency.find({ deleted: { $ne: true } });
+    res.json({
+      success: true,
+      data: frequencies, // ✅ Wrap trong object
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
