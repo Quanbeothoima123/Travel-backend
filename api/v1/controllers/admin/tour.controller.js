@@ -540,7 +540,204 @@ module.exports.checkTour = async (req, res) => {
     return res.status(400).json({ success: false, message: err.message });
   }
 };
+module.exports.checkTourEdit = async (req, res) => {
+  try {
+    const data = req.body;
+    const { tourId } = req.params;
 
+    // === 1. Check các trường bắt buộc (trừ term, vì check riêng) ===
+    const requiredFields = [
+      { field: "title", label: "Tên tour" },
+      { field: "slug", label: "Slug" },
+      { field: "categoryId", label: "Danh mục" },
+      { field: "travelTimeId", label: "Thời gian tour" },
+      { field: "hotelId", label: "Khách sạn" },
+      { field: "vehicleId", label: "Phương tiện" },
+      { field: "frequency", label: "Tần suất" },
+      { field: "prices", label: "Giá tour" },
+      { field: "discount", label: "Giảm giá" },
+      { field: "seats", label: "Số ghế" },
+      { field: "type", label: "Loại tour" },
+      { field: "filterId", label: "Bộ lọc" },
+      { field: "active", label: "Trạng thái" },
+      { field: "position", label: "Vị trí" },
+      { field: "thumbnail", label: "Ảnh bìa" },
+      { field: "images", label: "Thư viện ảnh" },
+      { field: "departPlaceId", label: "Nơi khởi hành" },
+      { field: "tags", label: "Tags" },
+      { field: "description", label: "Mô tả lịch trình" },
+      { field: "specialExperience", label: "Trải nghiệm đặc biệt" },
+    ];
+
+    for (let { field, label } of requiredFields) {
+      if (label === "Bộ lọc") {
+        console.log(data[field]);
+      }
+      if (
+        data[field] === undefined ||
+        data[field] === null ||
+        (typeof data[field] === "string" && data[field].trim() === "") ||
+        (Array.isArray(data[field]) && data[field].length === 0)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `Trường "${label}" không được để trống`,
+        });
+      }
+    }
+
+    // === 1.1 Validate số học ===
+    if (data.discount < 0 || data.discount > 100) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Giảm giá" phải nằm trong khoảng 0 - 100`,
+      });
+    }
+    if (data.prices < 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Giá tour" phải >= 0`,
+      });
+    }
+    if (data.seats <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Số ghế" phải >= 1`,
+      });
+    }
+
+    // === 1.2 Check enum ===
+    const allowedTypes = ["domestic", "aboard"];
+    if (!allowedTypes.includes(data.type)) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Loại tour" chỉ chấp nhận: ${allowedTypes.join(", ")}`,
+      });
+    }
+
+    // === 1.3 Check slug duy nhất ===
+    const existingTour = await Tour.findOne({
+      slug: data.slug,
+      _id: { $ne: new mongoose.Types.ObjectId(tourId) },
+    });
+
+    if (existingTour) {
+      return res.status(400).json({
+        success: false,
+        message: `Slug "${data.slug}" đã tồn tại, vui lòng chọn slug khác.`,
+      });
+    }
+
+    // === 2. Check ID tồn tại ===
+    const checkExists = async (Model, id, name) => {
+      const realId = id && id._id ? id._id : id;
+      if (!mongoose.Types.ObjectId.isValid(realId)) {
+        throw new Error(`"${name}" không hợp lệ`);
+      }
+      const exists = await Model.findById(realId);
+      if (!exists) throw new Error(`"${name}" không tồn tại`);
+    };
+
+    await checkExists(TourCategory, data.categoryId, "Danh mục");
+    await checkExists(TravelTime, data.travelTimeId, "Thời gian tour");
+    await checkExists(Hotel, data.hotelId, "Khách sạn");
+    await checkExists(Frequency, data.frequency, "Tần suất");
+
+    for (let vId of data.vehicleId) {
+      await checkExists(Vehicle, vId, "Phương tiện");
+    }
+
+    for (let fId of data.filterId) {
+      await checkExists(Filter, fId, "Bộ lọc");
+    }
+
+    await checkExists(DepartPlace, data.departPlaceId, "Nơi khởi hành");
+
+    // === 3. Check term ===
+    if (!Array.isArray(data.term) || data.term.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Trường "Điều khoản" không được để trống`,
+      });
+    }
+
+    for (let t of data.term) {
+      if (!t.termId || !t.description || String(t.description).trim() === "") {
+        return res.status(400).json({
+          success: false,
+          message: `Mỗi điều khoản phải có đủ "termId" và "description"`,
+        });
+      }
+      await checkExists(Term, t.termId, "Điều khoản");
+    }
+
+    // === 4. Check allowTypePeople ===
+    if (Array.isArray(data.allowTypePeople)) {
+      for (let pId of data.allowTypePeople) {
+        await checkExists(
+          TypeOfPerson,
+          pId,
+          "Loại khách trong allowTypePeople"
+        );
+      }
+    }
+
+    // === 5. Check additionalPrices ===
+    if (
+      Array.isArray(data.additionalPrices) &&
+      data.additionalPrices.length > 0
+    ) {
+      if (
+        !Array.isArray(data.allowTypePeople) ||
+        data.allowTypePeople.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `Bạn cần chọn "Loại khách được phép" trước khi thêm phụ thu`,
+        });
+      }
+
+      for (let ap of data.additionalPrices) {
+        await checkExists(
+          TypeOfPerson,
+          ap.typeOfPersonId,
+          "Loại khách (phụ thu)"
+        );
+
+        const realTypeId = ap.typeOfPersonId._id || ap.typeOfPersonId;
+        if (!data.allowTypePeople.includes(realTypeId)) {
+          return res.status(400).json({
+            success: false,
+            message: `Loại khách ${realTypeId} trong phụ thu không nằm trong danh sách được phép`,
+          });
+        }
+
+        if (typeof ap.moneyMore !== "number" || ap.moneyMore <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Giá trị phụ thu cho loại khách ${realTypeId} phải là số dương`,
+          });
+        }
+      }
+    }
+
+    // === 6. Check description ===
+    for (let d of data.description) {
+      if (!d.day || !d.title || !d.image || !d.description) {
+        return res.status(400).json({
+          success: false,
+          message: `Mỗi ngày trong "Mô tả lịch trình" phải có đủ Ngày, Tiêu đề, Ảnh và Nội dung`,
+        });
+      }
+    }
+
+    // === OK ===
+    return res.json({ success: true, message: "Dữ liệu tour hợp lệ" });
+  } catch (err) {
+    console.error("Check tour error:", err);
+    return res.status(400).json({ success: false, message: err.message });
+  }
+};
 /**
  * GET /api/v1/tours/countTours
  */
@@ -610,6 +807,7 @@ module.exports.getTourById = async (req, res) => {
       .populate("frequency", "title")
       .populate("term.termId", "title icon")
       .populate("allowTypePeople", "name")
+      .populate("additionalPrices.typeOfPersonId", "name")
       .populate("departPlaceId", "name googleDirection description")
       .populate("createdBy._id", "fullName")
       .populate("deletedBy._id", "fullName")
