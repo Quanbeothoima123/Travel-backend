@@ -343,7 +343,24 @@ module.exports.getLatestTours = async (req, res) => {
       .select("title thumbnail prices discount seats slug type tags")
       .lean();
 
-    // Tính số chỗ đã đặt cho mỗi tour
+    // Tính TỔNG SỐ NGƯỜI đã đặt TẤT CẢ các tour (để tính fillRate)
+    const totalPeopleAllTours = await Invoice.aggregate([
+      {
+        $match: {
+          status: { $in: ["pending", "paid"] }, // Chỉ tính đơn hợp lệ
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalPeople: { $sum: "$totalPeople" },
+        },
+      },
+    ]);
+
+    const totalAllBookings = totalPeopleAllTours[0]?.totalPeople || 1; // Tránh chia cho 0
+
+    // Tính số người đã đặt cho mỗi tour
     const toursWithBookings = await Promise.all(
       latestTours.map(async (tour) => {
         const bookings = await Invoice.aggregate([
@@ -356,26 +373,20 @@ module.exports.getLatestTours = async (req, res) => {
           {
             $group: {
               _id: null,
-              totalBooked: { $sum: "$totalPeople" },
+              totalBooked: { $sum: "$totalPeople" }, // Số người đã đặt tour này
             },
           },
         ]);
 
         const bookedSeats = bookings[0]?.totalBooked || 0;
-        const availableSeats = tour.seats - bookedSeats;
-        const fillRate =
-          tour.seats > 0 ? ((bookedSeats / tour.seats) * 100).toFixed(2) : 0;
 
-        let status = "available";
-        if (availableSeats === 0) status = "full";
-        else if (availableSeats <= tour.seats * 0.2) status = "almost-full";
+        // fillRate = (số người đặt tour này / tổng số người đặt tất cả tour) × 100
+        const fillRate = ((bookedSeats / totalAllBookings) * 100).toFixed(2);
 
         return {
           ...tour,
-          bookedSeats,
-          availableSeats,
-          fillRate: parseFloat(fillRate),
-          status,
+          bookedSeats, // Số người đã đặt tour này
+          fillRate: parseFloat(fillRate), // % so với tổng bookings hệ thống
         };
       })
     );
@@ -393,7 +404,6 @@ module.exports.getLatestTours = async (req, res) => {
     });
   }
 };
-
 // [GET] /admin/dashboard/recent-activities
 module.exports.getRecentActivities = async (req, res) => {
   try {
