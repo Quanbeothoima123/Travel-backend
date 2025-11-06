@@ -3,6 +3,7 @@ const router = express.Router();
 const controller = require("../../controllers/admin/tour.controller");
 const validate = require("../../../../validates/admin/tour.validate");
 router.get("/get-all-tour", controller.getTours);
+router.get("/get-all-tour-advanced", controller.getToursAdvanced);
 router.get("/get-id-title", controller.getIdAndTitle);
 router.patch("/bulk-update", controller.bulkUpdateTours);
 router.patch("/update-status-single/:id", controller.updateTour);
