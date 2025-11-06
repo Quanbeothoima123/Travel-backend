@@ -3,8 +3,7 @@ const Invoice = require("../../models/invoice.model");
 const Tour = require("../../models/tour.model");
 const User = require("../../models/user.model");
 const telegramBot = require("../../../../helpers/telegramBot");
-
-// [GET] /api/v1/admin/invoice
+//[GET] /api/v1/admin/invoice
 // Lấy danh sách invoice với filter, search, sort, pagination
 module.exports.index = async (req, res) => {
   try {
@@ -57,8 +56,10 @@ module.exports.index = async (req, res) => {
           invoices: [],
           totalPages: 0,
           totalItems: 0,
-          totalRevenue: 0,
-          totalBookings: 0,
+          totalRevenuePaid: 0,
+          totalBookingsPaid: 0,
+          totalRevenueUnpaid: 0,
+          totalBookingsUnpaid: 0,
         });
       }
     }
@@ -85,8 +86,10 @@ module.exports.index = async (req, res) => {
           invoices: [],
           totalPages: 0,
           totalItems: 0,
-          totalRevenue: 0,
-          totalBookings: 0,
+          totalRevenuePaid: 0,
+          totalBookingsPaid: 0,
+          totalRevenueUnpaid: 0,
+          totalBookingsUnpaid: 0,
         });
       }
     }
@@ -112,8 +115,10 @@ module.exports.index = async (req, res) => {
           invoices: [],
           totalPages: 0,
           totalItems: 0,
-          totalRevenue: 0,
-          totalBookings: 0,
+          totalRevenuePaid: 0,
+          totalBookingsPaid: 0,
+          totalRevenueUnpaid: 0,
+          totalBookingsUnpaid: 0,
         });
       }
     }
@@ -195,28 +200,64 @@ module.exports.index = async (req, res) => {
 
     const totalPages = Math.ceil(totalItems / limitNum);
 
-    // Tính toán thống kê
-    const stats = await Invoice.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: "$totalPrice" },
-          totalBookings: { $sum: 1 },
+    // Tính toán thống kê theo trạng thái thanh toán
+    // Chỉ tính trong phạm vi filter hiện tại
+    const [paidStats, unpaidStats] = await Promise.all([
+      // Đơn ĐÃ THANH TOÁN (status = "paid")
+      Invoice.aggregate([
+        {
+          $match: {
+            ...filter,
+            status: "paid",
+          },
         },
-      },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$totalPrice" },
+            totalBookings: { $sum: 1 },
+          },
+        },
+      ]),
+
+      // Đơn CHỜ THANH TOÁN (status = "pending")
+      Invoice.aggregate([
+        {
+          $match: {
+            ...filter,
+            status: "pending",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$totalPrice" },
+            totalBookings: { $sum: 1 },
+          },
+        },
+      ]),
     ]);
 
-    const totalRevenue = stats.length > 0 ? stats[0].totalRevenue : 0;
-    const totalBookings = stats.length > 0 ? stats[0].totalBookings : 0;
+    const totalRevenuePaid =
+      paidStats.length > 0 ? paidStats[0].totalRevenue : 0;
+    const totalBookingsPaid =
+      paidStats.length > 0 ? paidStats[0].totalBookings : 0;
+    const totalRevenueUnpaid =
+      unpaidStats.length > 0 ? unpaidStats[0].totalRevenue : 0;
+    const totalBookingsUnpaid =
+      unpaidStats.length > 0 ? unpaidStats[0].totalBookings : 0;
 
     res.json({
       invoices,
       currentPage: pageNum,
       totalPages,
       totalItems,
-      totalRevenue,
-      totalBookings,
+      // Doanh thu ĐÃ thanh toán (status = "paid")
+      totalRevenuePaid,
+      totalBookingsPaid,
+      // Doanh thu CHỜ thanh toán (status = "pending")
+      totalRevenueUnpaid,
+      totalBookingsUnpaid,
     });
   } catch (error) {
     console.error("Error in invoice.index:", error);
