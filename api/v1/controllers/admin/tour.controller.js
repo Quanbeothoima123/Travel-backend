@@ -93,6 +93,120 @@ module.exports.getTours = async (req, res) => {
   }
 };
 
+// api/v1/admin/tours/get-all-tour-advanced
+module.exports.getToursAdvanced = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      sort,
+      categoryId,
+      active,
+      type,
+      vehicleId,
+      filterId,
+      frequencyId,
+    } = req.query;
+
+    const query = { deleted: "false" };
+
+    // Search theo title
+    if (search) {
+      query.title = { $regex: search, $options: "i" };
+    }
+
+    // Filter theo category (bao gồm cả con)
+    if (categoryId) {
+      const descendantIds = await getAllDescendantIds(
+        TourCategory,
+        categoryId,
+        "parentId"
+      );
+      query.categoryId = { $in: [categoryId, ...descendantIds] };
+    }
+
+    // Filter theo trạng thái active
+    if (active === "true") query.active = true;
+    if (active === "false") query.active = false;
+
+    // Filter theo type
+    if (type && ["domestic", "aboard"].includes(type)) {
+      query.type = type;
+    }
+
+    // Filter theo vehicle
+    if (vehicleId) {
+      query.vehicleId = vehicleId;
+    }
+
+    // Filter theo filter
+    if (filterId) {
+      query.filterId = { $in: [filterId] };
+    }
+
+    // Filter theo frequency
+    if (frequencyId) {
+      query.frequency = frequencyId;
+    }
+
+    // Sort
+    let sortObj = { createdAt: -1 };
+    if (sort) {
+      switch (sort) {
+        case "price_desc":
+          sortObj = { prices: -1 };
+          break;
+        case "price_asc":
+          sortObj = { prices: 1 };
+          break;
+        case "position_desc":
+          sortObj = { position: -1 };
+          break;
+        case "position_asc":
+          sortObj = { position: 1 };
+          break;
+        case "discount_desc":
+          sortObj = { discount: -1 };
+          break;
+        case "discount_asc":
+          sortObj = { discount: 1 };
+          break;
+        case "title_asc":
+          sortObj = { title: 1 };
+          break;
+        case "title_desc":
+          sortObj = { title: -1 };
+          break;
+        default:
+          sortObj = { createdAt: -1 };
+      }
+    }
+
+    // Pagination
+    const total = await Tour.countDocuments(query);
+    const tours = await Tour.find(query)
+      .populate("categoryId", "title slug")
+      .populate("vehicleId", "name image slug")
+      .populate("filterId", "label value slug")
+      .populate("frequency", "title")
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .sort(sortObj);
+
+    res.json({
+      success: true,
+      data: tours,
+      pagination: {
+        total,
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 module.exports.getIdAndTitle = async (req, res) => {
   try {
     const { limit = 100 } = req.query;
