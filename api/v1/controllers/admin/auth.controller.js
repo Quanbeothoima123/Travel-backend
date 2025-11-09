@@ -1,100 +1,3 @@
-// const AdminAccount = require("../../models/admin-account.model");
-// const Role = require("../../models/role.model");
-// const jwt = require("jsonwebtoken");
-// const md5 = require("md5");
-// // secret key JWT (bạn nên để trong biến môi trường .env)
-// const JWT_SECRET = process.env.JWT_SECRET;
-// const JWT_EXPIRES = "7d";
-
-// // LOGIN
-// module.exports.login = async (req, res) => {
-//   try {
-//     const { email, password } = req.body;
-//     if (!email || !password) {
-//       return res.status(400).json({ message: "Thiếu email hoặc password" });
-//     }
-
-//     const admin = await AdminAccount.findOne({
-//       email: email,
-//       deleted: false,
-//     }).populate("role_id");
-
-//     if (!admin) {
-//       return res.status(401).json({ message: "Tài khoản không tồn tại" });
-//     }
-
-//     const hashedPassword = md5(password);
-//     if (admin.password !== hashedPassword) {
-//       return res.status(401).json({ message: "Sai mật khẩu" });
-//     }
-
-//     const token = jwt.sign(
-//       {
-//         id: admin._id,
-//         email: admin.email,
-//         role: admin.role_id ? admin.role_id.title : "No Role",
-//       },
-//       JWT_SECRET,
-//       { expiresIn: JWT_EXPIRES }
-//     );
-
-//     // 🔹 Cookie config cho cross-origin
-//     res.cookie("adminToken", token, {
-//       httpOnly: true,
-//       secure: true, //  Bắt buộc true vì cả Vercel & Render đều HTTPS
-//       sameSite: "None", //  Thay đổi từ 'Strict' sang 'None' cho cross-origin
-//       maxAge: 7 * 24 * 60 * 60 * 1000,
-//       path: "/", // Đảm bảo cookie available cho tất cả routes
-//     });
-
-//     return res.json({
-//       message: "Đăng nhập thành công",
-//       admin: {
-//         id: admin._id,
-//         fullName: admin.fullName,
-//         email: admin.email,
-//         avatar: admin.avatar,
-//         role: admin.role_id ? admin.role_id.title : null,
-//         permissions: admin.role_id ? admin.role_id.permissions : [],
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Login error:", error);
-//     return res.status(500).json({ message: "Lỗi server" });
-//   }
-// };
-// // routes/admin.js
-// module.exports.checkAuth = async (req, res) => {
-//   try {
-//     const token = req.cookies.adminToken;
-//     if (!token) {
-//       return res
-//         .status(401)
-//         .json({ message: "Vui lòng đăng nhập tài khoản quản trị!" });
-//     }
-
-//     // Giải mã token
-//     const decoded = jwt.verify(token, JWT_SECRET);
-
-//     // Tìm admin
-//     const admin = await AdminAccount.findOne({
-//       _id: decoded.id,
-//       deleted: false,
-//       status: "active",
-//     }).select("-password");
-
-//     if (!admin) {
-//       return res.status(403).json({
-//         success: false,
-//         message: "Tài khoản quản trị không hợp lệ hoặc đã bị khóa",
-//       });
-//     }
-//     return res.json({ admin: decoded });
-//   } catch (err) {
-//     return res.status(401).json({ message: "Token không hợp lệ" });
-//   }
-// };
-
 // controllers/admin/auth.controller.js
 const AdminAccount = require("../../models/admin-account.model");
 const RefreshToken = require("../../models/refresh-token.model");
@@ -143,9 +46,7 @@ module.exports.login = async (req, res) => {
       return res.status(401).json({ message: "Tài khoản không tồn tại" });
     }
 
-    // ✅ Dùng bcrypt.compare thay vì md5
     const isPasswordValid = await bcrypt.compare(password, admin.password);
-
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Sai mật khẩu" });
     }
@@ -164,10 +65,18 @@ module.exports.login = async (req, res) => {
       expiresAt: expiresAt,
     });
 
+    // ✅ LƯU REFRESH TOKEN VÀO HTTPONLY COOKIE
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true, // JavaScript không thể đọc
+      secure: true, // BẮT BUỘC true với SameSite=None
+      sameSite: "none", // Cho phép cross-origin (frontend khác domain)
+      maxAge: REFRESH_TOKEN_EXPIRES, // 7 ngày (ms)
+    });
+
+    // ❌ KHÔNG trả refreshToken trong JSON nữa
     return res.json({
       message: "Đăng nhập thành công",
-      accessToken,
-      refreshToken,
+      accessToken, // ← Chỉ trả accessToken
       admin: {
         id: admin._id,
         fullName: admin.fullName,
@@ -182,7 +91,6 @@ module.exports.login = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
 // REGISTER ADMIN (nếu cần)
 module.exports.register = async (req, res) => {
   try {
@@ -256,46 +164,58 @@ module.exports.changePassword = async (req, res) => {
 };
 
 // REFRESH TOKEN
+// ✅ Refresh Token - Lấy từ cookie
 module.exports.refreshToken = async (req, res) => {
   try {
-    const { refreshToken } = req.body;
+    // ✅ Lấy refreshToken từ cookie thay vì req.body
+    const refreshToken = req.cookies.refreshToken;
 
     if (!refreshToken) {
-      return res.status(400).json({ message: "Thiếu refresh token" });
+      return res.status(401).json({ message: "No refresh token" });
     }
 
-    // Tìm refresh token trong DB
-    const tokenDoc = await RefreshToken.findOne({
+    // Kiểm tra token trong DB
+    const tokenRecord = await RefreshToken.findOne({
       token: refreshToken,
-      deleted: false,
       expiresAt: { $gt: new Date() },
-    });
+    }).populate("admin_id");
 
-    if (!tokenDoc) {
-      return res
-        .status(401)
-        .json({ message: "Refresh token không hợp lệ hoặc đã hết hạn" });
+    if (!tokenRecord) {
+      return res.status(401).json({ message: "Invalid refresh token" });
     }
 
-    // Tìm admin
-    const admin = await AdminAccount.findOne({
-      _id: tokenDoc.admin_id,
-      deleted: false,
-      status: "active",
-    }).populate("role_id");
-
-    if (!admin) {
-      return res.status(403).json({ message: "Tài khoản không hợp lệ" });
-    }
-
-    // Tạo Access Token mới
-    const newAccessToken = generateAccessToken(admin);
+    // Tạo access token mới
+    const newAccessToken = generateAccessToken(tokenRecord.admin_id);
 
     return res.json({
       accessToken: newAccessToken,
     });
   } catch (error) {
     console.error("Refresh token error:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+// ✅ Logout - Xóa cookie
+module.exports.logout = async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (refreshToken) {
+      // Xóa token khỏi DB
+      await RefreshToken.deleteOne({ token: refreshToken });
+    }
+
+    // ✅ XÓA COOKIE
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+    });
+
+    return res.json({ message: "Đăng xuất thành công" });
+  } catch (error) {
+    console.error("Logout error:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
@@ -338,21 +258,5 @@ module.exports.checkAuth = async (req, res) => {
       return res.status(401).json({ message: "Token đã hết hạn" });
     }
     return res.status(401).json({ message: "Token không hợp lệ" });
-  }
-};
-
-// LOGOUT
-module.exports.logout = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-
-    if (refreshToken) {
-      await RefreshToken.deleteOne({ token: refreshToken });
-    }
-
-    return res.json({ message: "Đăng xuất thành công" });
-  } catch (error) {
-    console.error("Logout error:", error);
-    return res.status(500).json({ message: "Lỗi server" });
   }
 };
