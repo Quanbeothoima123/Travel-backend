@@ -91,41 +91,6 @@ module.exports.login = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-// REGISTER ADMIN (nếu cần)
-module.exports.register = async (req, res) => {
-  try {
-    const { email, password, fullName } = req.body;
-
-    // Kiểm tra email đã tồn tại
-    const existingAdmin = await AdminAccount.findOne({ email });
-    if (existingAdmin) {
-      return res.status(400).json({ message: "Email đã được sử dụng" });
-    }
-
-    // ✅ Hash password bằng bcrypt
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-    // Tạo admin mới
-    const newAdmin = await AdminAccount.create({
-      email,
-      password: hashedPassword,
-      fullName,
-      status: "active",
-    });
-
-    return res.status(201).json({
-      message: "Tạo tài khoản thành công",
-      admin: {
-        id: newAdmin._id,
-        email: newAdmin.email,
-        fullName: newAdmin.fullName,
-      },
-    });
-  } catch (error) {
-    console.error("Register error:", error);
-    return res.status(500).json({ message: "Lỗi server" });
-  }
-};
 
 // CHANGE PASSWORD
 module.exports.changePassword = async (req, res) => {
