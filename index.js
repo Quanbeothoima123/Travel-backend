@@ -12,7 +12,7 @@ const DOMAIN_WEBSITE = process.env.DOMAIN_WEBSITE || "http://localhost:3000";
 const DOMAIN_WEBSITE_ADMIN =
   process.env.DOMAIN_WEBSITE_ADMIN || "http://localhost:3001";
 // 🔹 Import Socket.IO setup
-const initializeSocket = require("./socket/socket");
+const initializeSocket = require("./socket");
 
 // 🔹 Import Telegram Bot
 const telegramBot = require("./helpers/telegramBot");
