@@ -46,14 +46,14 @@ module.exports = (io, socket) => {
       });
 
       // Cập nhật conversation
-      const unreadCounts = conversation.unreadCounts || new Map();
+      const unreadCounts = conversation.unreadCounts || {};
 
       // Tăng unread count cho người khác
       conversation.participants.forEach((p) => {
         const participantId = p.userId.toString();
         if (participantId !== socket.userId.toString() && !p.leftAt) {
-          const currentCount = unreadCounts.get(participantId) || 0;
-          unreadCounts.set(participantId, currentCount + 1);
+          const currentCount = unreadCounts[participantId] || 0;
+          unreadCounts[participantId] = currentCount + 1;
         }
       });
 
@@ -94,7 +94,7 @@ module.exports = (io, socket) => {
           io.to(`user:${p.userId}`).emit("conversation-updated", {
             conversationId,
             lastMessage: populatedMessage,
-            unreadCount: unreadCounts.get(p.userId.toString()) || 0,
+            unreadCount: unreadCounts[p.userId.toString()] || 0,
           });
         }
       });
