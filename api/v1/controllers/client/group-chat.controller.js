@@ -73,10 +73,10 @@ module.exports.createGroup = async (req, res) => {
       })),
     ];
 
-    // Tạo unreadCounts Map
-    const unreadCounts = new Map();
+    // Tạo unreadCounts object
+    const unreadCounts = {};
     [userId, ...uniqueMemberIds].forEach((id) => {
-      unreadCounts.set(id.toString(), 0);
+      unreadCounts[id.toString()] = 0;
     });
 
     // Tạo group conversation
@@ -200,9 +200,9 @@ module.exports.addMembers = async (req, res) => {
     conversation.participants.push(...newParticipants);
 
     // Cập nhật unreadCounts
-    const unreadCounts = conversation.unreadCounts || new Map();
+    const unreadCounts = conversation.unreadCounts || {};
     newMemberIds.forEach((id) => {
-      unreadCounts.set(id.toString(), 0);
+      unreadCounts[id.toString()] = 0;
     });
     conversation.unreadCounts = unreadCounts;
 
@@ -279,8 +279,8 @@ module.exports.removeMember = async (req, res) => {
     );
 
     // Xóa khỏi unreadCounts
-    const unreadCounts = conversation.unreadCounts || new Map();
-    unreadCounts.delete(memberId.toString());
+    const unreadCounts = conversation.unreadCounts || {};
+    delete unreadCounts[memberId.toString()];
     conversation.unreadCounts = unreadCounts;
 
     await conversation.save();
