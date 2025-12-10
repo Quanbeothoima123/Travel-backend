@@ -53,7 +53,6 @@ const AdminAccountSchema = new mongoose.Schema(
 );
 
 // Index
-AdminAccountSchema.index({ email: 1 });
 AdminAccountSchema.index({ role_id: 1 });
 AdminAccountSchema.index({ deleted: 1 });
 
