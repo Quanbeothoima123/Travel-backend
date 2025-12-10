@@ -1,8 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/client/invoice.controller");
-router.post("/payUsingCash", controller.createInvoice);
-router.post("/pay-with-momo", controller.payWithMomo);
+const { checkAuth } = require("../../../../middlewares/auth.middleware");
+router.post("/payUsingCash", checkAuth, controller.createInvoice);
+router.post("/pay-with-momo", checkAuth, controller.payWithMomo);
 router.post("/momo-ipn", controller.momoIPN);
 router.get("/detail/:invoiceId", controller.getById);
 router.get("/code/:invoiceCode", controller.getByCode);

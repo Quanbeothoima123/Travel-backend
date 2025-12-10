@@ -1,6 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/client/customer-consolation.controller");
-router.post("/customer-consolation", controller.createCustomerConsolation);
+const { checkAuth } = require("../../../../middlewares/auth.middleware");
+router.post(
+  "/customer-consolation",
+  checkAuth,
+  controller.createCustomerConsolation
+);
 
 module.exports = router;

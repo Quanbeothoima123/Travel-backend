@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/client/tour.controller");
+router.get("/tour-list-domestic", controller.tourListDomestic);
+router.get("/tour-list-aboard", controller.tourListAboard);
 router.get("/get-all", controller.getAllTour);
 router.get("/get-id-title", controller.getIdAndTitle);
 router.get("/search", controller.searchTour);
