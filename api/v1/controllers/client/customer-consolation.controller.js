@@ -10,18 +10,7 @@ module.exports.createCustomerConsolation = async (req, res) => {
     if (!phoneNumber) {
       return res.json({ code: 400, message: "Vui lòng nhập số điện thoại" });
     }
-
-    // Lấy userId từ cookie (nếu có đăng nhập)
-    let userId = null;
-    const token = req.cookies?.authToken;
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        userId = decoded.userId;
-      } catch (err) {
-        // token không hợp lệ -> userId = null
-      }
-    }
+    const userId = req.user.userId;
 
     // Kiểm tra xem số điện thoại đã có chưa
     let record = await CustomerConsolation.findOne({ phoneNumber, tourId });
