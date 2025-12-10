@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
 
 const UserRatingSchema = new mongoose.Schema({
   userId: {
@@ -30,5 +30,9 @@ UserRatingSchema.index(
   { userId: 1, targetId: 1, targetType: 1 },
   { unique: true }
 );
-
-export default mongoose.model("UserRating", UserRatingSchema);
+const UserRating = mongoose.model(
+  "UserRating",
+  UserRatingSchema,
+  "user-rating"
+);
+module.exports = UserRating;

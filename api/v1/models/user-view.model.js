@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
 
 const UserViewSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // có thể null nếu guest
@@ -9,7 +9,7 @@ const UserViewSchema = new mongoose.Schema({
   },
   targetType: {
     type: String,
-    enum: ["article", "tour", "video","gallery"],
+    enum: ["article", "tour", "video", "gallery"],
     required: true,
   },
 
@@ -21,4 +21,5 @@ const UserViewSchema = new mongoose.Schema({
 
 UserViewSchema.index({ targetId: 1, targetType: 1, createdAt: -1 });
 
-export default mongoose.model("UserView", UserViewSchema);
+const UserView = mongoose.model("UserView", UserViewSchema, "user-view");
+module.exports = UserView;
