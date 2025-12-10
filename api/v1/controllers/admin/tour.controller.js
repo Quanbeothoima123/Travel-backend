@@ -12,7 +12,7 @@ const DepartPlace = require("../../models/depart-place.model");
 const { generateTagsAI } = require("../../../../services/tagService");
 const { generateSlug } = require("../../../../services/slugService");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
-const jwt = require("jsonwebtoken");
+const { sendToQueue } = require("../../../../config/rabbitmq");
 module.exports.getTours = async (req, res) => {
   try {
     const {
@@ -228,6 +228,7 @@ module.exports.getIdAndTitle = async (req, res) => {
 module.exports.bulkUpdateTours = async (req, res) => {
   try {
     const { ids, set, positions } = req.body;
+    const adminId = req.admin.adminId;
 
     if (!ids || ids.length === 0) {
       return res.status(400).json({
@@ -236,30 +237,58 @@ module.exports.bulkUpdateTours = async (req, res) => {
       });
     }
 
-    // Nếu có positions → update từng tour
+    // ========================================
+    //  Nếu có positions → update từng tour
+    // ========================================
     if (Array.isArray(positions) && positions.length > 0) {
       for (const p of positions) {
         const payload = { ...(set || {}) };
+
         if (p.position !== undefined) {
           payload.position = Number(p.position) || 0;
         }
-        await Tour.findByIdAndUpdate(p.id, payload);
+
+        await Tour.findByIdAndUpdate(p.id, {
+          $set: payload,
+          $push: {
+            updatedBy: {
+              _id: adminId,
+              at: new Date(),
+            },
+          },
+        });
       }
+
       return res.json({
         success: true,
-        message: `Đã cập nhật ${positions.length} sản phẩm(Có cập nhật vị trí).`,
+        message: `Đã cập nhật ${positions.length} sản phẩm (có vị trí).`,
       });
     }
 
-    // Nếu chỉ có set → update nhiều tour
+    // ========================================
+    //  Nếu chỉ có set → updateMany
+    // ========================================
     if (set && Object.keys(set).length > 0) {
-      await Tour.updateMany({ _id: { $in: ids } }, { $set: set });
+      await Tour.updateMany(
+        { _id: { $in: ids } },
+        {
+          $set: set,
+          $push: {
+            updatedBy: {
+              _id: adminId,
+              at: new Date(),
+            },
+          },
+        }
+      );
+
       return res.json({
         success: true,
         message: `Đã cập nhật ${ids.length} sản phẩm.`,
       });
     }
 
+    // ========================================
     return res.status(400).json({
       success: false,
       message: "Không có dữ liệu để cập nhật",
@@ -275,20 +304,82 @@ module.exports.bulkUpdateTours = async (req, res) => {
 // Update 1 Tour
 module.exports.updateTour = async (req, res) => {
   try {
+    console.log(" updateTour called - Admin ID:", req.admin.adminId);
+
+    const adminId = req.admin.adminId;
     const { id } = req.params;
-    const updated = await Tour.findByIdAndUpdate(id, req.body, { new: true });
+
+    // 1. Update tour
+    const updated = await Tour.findByIdAndUpdate(
+      id,
+      {
+        ...req.body,
+        $push: {
+          updatedBy: {
+            _id: adminId,
+            at: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
+
     if (!updated) {
+      console.error(" Tour not found:", id);
       return res.status(404).json({
         success: false,
         message: "Không tìm thấy tour này!",
       });
     }
+
+    console.log(" Tour updated:", updated.title);
+
+    // 3.  Tạo notification message
+    const notificationMessage = {
+      id: Date.now().toString(),
+      type: "admin-action",
+      category: "tour-management",
+      title: "Tour đã được cập nhật",
+      message: `${req.admin?.fullName || "Admin"} đã cập nhật tour: ${
+        updated.title
+      }`,
+      data: {
+        tourId: updated._id,
+        tourTitle: updated.title,
+        updatedBy: req.admin?.fullName || "Admin",
+        updatedAt: new Date().toISOString(),
+        changes: Object.keys(req.body),
+      },
+      unread: true,
+      timestamp: new Date().toISOString(),
+      time: "Vừa xong",
+    };
+
+    console.log(" Preparing to send notification:", notificationMessage.title);
+
+    // 4.  Gửi vào queue notifications.admin
+    try {
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log(" Notification sent to RabbitMQ successfully");
+      } else {
+        console.error(" Failed to send notification to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error(" RabbitMQ sendToQueue error:", queueError);
+    }
+
+    // 5. Response
     res.json({
       success: true,
       message: "Cập nhật tour thành công",
       data: updated,
     });
   } catch (err) {
+    console.error(" Error in updateTour:", err);
     res.status(500).json({
       success: false,
       message: err.message,
@@ -301,22 +392,7 @@ module.exports.updateTour = async (req, res) => {
  */
 module.exports.createTour = async (req, res) => {
   try {
-    // Lấy token từ cookie
-    const token = req.cookies.adminToken;
-    if (!token) {
-      return res
-        .status(401)
-        .json({ message: "Không có token, vui lòng đăng nhập" });
-    }
-
-    // Giải mã token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(403).json({ message: "Token không hợp lệ" });
-    }
-
+    const adminId = req.admin.adminId;
     // Dữ liệu body từ frontend
     const body = req.body;
 
@@ -324,7 +400,7 @@ module.exports.createTour = async (req, res) => {
     const tourData = {
       ...body,
       createdBy: {
-        _id: decoded.id,
+        _id: adminId,
         at: new Date(),
       },
     };
@@ -332,6 +408,26 @@ module.exports.createTour = async (req, res) => {
     // Tạo tour mới
     const newTour = new Tour(tourData);
     await newTour.save();
+    //  GỬI NOTIFICATION CHO ADMIN KHÁC
+    const notificationMessage = {
+      id: Date.now().toString(),
+      type: "admin-action", // Phân biệt admin action
+      category: "tour-management",
+      title: "Tour mới được tạo",
+      message: `Admin ${req.admin.fullName} đã tạo tour: ${newTour.title}`,
+      data: {
+        tourId: newTour._id,
+        tourTitle: newTour.title,
+        createdBy: req.admin.fullName,
+        createdAt: newTour.createdAt,
+      },
+      unread: true,
+      timestamp: new Date().toISOString(),
+      time: "Vừa xong",
+    };
+
+    // Gửi vào queue notifications.admin
+    await sendToQueue("notifications.admin", notificationMessage);
 
     return res.status(201).json({
       success: true,
@@ -571,7 +667,6 @@ module.exports.checkTourEdit = async (req, res) => {
 
     for (let { field, label } of requiredFields) {
       if (label === "Bộ lọc") {
-        console.log(data[field]);
       }
       if (
         data[field] === undefined ||
@@ -835,21 +930,7 @@ module.exports.getTourById = async (req, res) => {
 module.exports.delete = async (req, res) => {
   try {
     // Lấy token từ cookie
-    const token = req.cookies.adminToken;
-    if (!token) {
-      return res
-        .status(401)
-        .json({ message: "Không có token, vui lòng đăng nhập" });
-    }
-
-    // Giải mã token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(403).json({ message: "Token không hợp lệ" });
-    }
-
+    const adminId = req.admin.adminId;
     const tourId = req.params.tourId;
 
     // Tìm tour
@@ -866,7 +947,7 @@ module.exports.delete = async (req, res) => {
     // Cập nhật thông tin xóa
     tour.deleted = true;
     tour.deletedBy = {
-      _id: decoded.id,
+      _id: adminId,
       at: new Date(),
     };
 
@@ -889,34 +970,26 @@ module.exports.delete = async (req, res) => {
 
 module.exports.editTour = async (req, res) => {
   try {
-    // === 1. Lấy token từ cookie ===
-    const token = req.cookies.adminToken;
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Không có token, vui lòng đăng nhập",
-      });
-    }
+    console.log("🔍 editTour called - Admin ID:", req.admin.adminId);
 
-    // === 2. Giải mã token ===
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Token không hợp lệ" });
-    }
-
+    // === 1. Lấy adminId từ middleware ===
+    const adminId = req.admin.adminId;
     const { tourId } = req.params;
 
-    // === 3. Tìm tour ===
+    // === 2. Tìm tour ===
     const tour = await Tour.findById(tourId);
     if (!tour) {
+      console.error(" Tour not found:", tourId);
       return res
         .status(404)
         .json({ success: false, message: "Không tìm thấy tour" });
     }
+
+    console.log(" Tour found:", tour.title);
+
+    // === 3. Lưu thông tin cũ để so sánh (optional - để biết thay đổi gì)
+    const oldTitle = tour.title;
+    const changedFields = [];
 
     // === 4. Cập nhật từng trường nếu có trong body ===
     const fields = [
@@ -947,26 +1020,81 @@ module.exports.editTour = async (req, res) => {
 
     fields.forEach((field) => {
       if (req.body[field] !== undefined) {
+        //  Track changed fields
+        if (JSON.stringify(tour[field]) !== JSON.stringify(req.body[field])) {
+          changedFields.push(field);
+        }
         tour[field] = req.body[field];
       }
     });
 
+    console.log(
+      " Changed fields:",
+      changedFields.length > 0 ? changedFields : "none"
+    );
+
     // === 5. Thêm lịch sử updatedBy ===
     tour.updatedBy.push({
-      _id: new mongoose.Types.ObjectId(decoded.id),
+      _id: adminId,
       at: new Date(),
     });
 
     // === 6. Lưu lại ===
     await tour.save();
+    console.log(" Tour saved:", tour.title);
 
+    // === 7.  GỬI NOTIFICATION VÀO RABBITMQ ===
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "tour-management",
+        title: "Tour đã được cập nhật",
+        message: `${req.admin?.fullName || "Admin"} đã cập nhật tour: ${
+          tour.title
+        }`,
+        data: {
+          tourId: tour._id,
+          tourTitle: tour.title,
+          updatedBy: req.admin?.fullName || "Admin",
+          updatedAt: new Date().toISOString(),
+          changes:
+            changedFields.length > 0 ? changedFields : ["general update"],
+          oldTitle: oldTitle !== tour.title ? oldTitle : undefined,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      console.log(
+        " Preparing to send notification:",
+        notificationMessage.title
+      );
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+
+      if (sent) {
+        console.log(" Notification sent to RabbitMQ successfully");
+      } else {
+        console.error(" Failed to send notification to RabbitMQ");
+      }
+    } catch (queueError) {
+      //  Không fail request nếu notification lỗi
+      console.error(" RabbitMQ notification error:", queueError);
+    }
+
+    // === 8. Response ===
     return res.status(200).json({
       success: true,
       message: "Cập nhật tour thành công",
       tour,
     });
   } catch (err) {
-    console.error("Lỗi khi cập nhật tour:", err);
+    console.error(" Error in editTour:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
