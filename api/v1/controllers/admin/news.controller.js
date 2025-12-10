@@ -9,24 +9,7 @@ const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 module.exports.create = async (req, res) => {
   try {
     const data = req.body;
-
-    // Lấy token từ cookies
-    const token = req.cookies?.adminToken;
-    if (!token) {
-      return res.status(401).json({ success: false, message: "Thiếu token" });
-    }
-
-    // Decode token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Token không hợp lệ" });
-    }
-
-    const adminId = decoded.id; // giả sử token có field id
+    const adminId = req.admin.adminId;
 
     // Gắn thêm author & createdBy
     const news = new News({
