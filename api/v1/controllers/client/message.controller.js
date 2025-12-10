@@ -3,6 +3,7 @@ const Message = require("../../models/message.model");
 const Conversation = require("../../models/conversation.model");
 
 // Route: GET /api/v1/message/:conversationId
+// ✅ FIX: Không tự động mark as read khi getMessages
 module.exports.getMessages = async (req, res) => {
   try {
     const { conversationId } = req.params;
@@ -18,7 +19,7 @@ module.exports.getMessages = async (req, res) => {
     if (!conversation) {
       return res.status(403).json({
         success: false,
-        error: "Access denied",
+        message: "Bạn không có quyền truy cập đoạn chat này!",
       });
     }
 
@@ -30,11 +31,11 @@ module.exports.getMessages = async (req, res) => {
     if (userParticipant?.leftAt) {
       return res.status(403).json({
         success: false,
-        error: "You have left this conversation",
+        message: "Bạn đã rời khỏi đoạn chat này rồi!",
       });
     }
 
-    // Lấy tin nhắn (chưa bị xóa bởi user này)
+    // ✅ Chỉ lấy tin nhắn, KHÔNG mark as read
     const messages = await Message.find({
       conversationId,
       deletedFor: { $ne: userId },
@@ -52,37 +53,11 @@ module.exports.getMessages = async (req, res) => {
       })
       .lean();
 
-    // Đánh dấu đã đọc
-    const messagesToMarkRead = messages
-      .filter(
-        (m) =>
-          m.senderId._id.toString() !== userId.toString() &&
-          !m.seenBy.some((s) => s.userId.toString() === userId.toString())
-      )
-      .map((m) => m._id);
-
-    if (messagesToMarkRead.length > 0) {
-      await Message.updateMany(
-        { _id: { $in: messagesToMarkRead } },
-        {
-          $push: {
-            seenBy: {
-              userId: userId,
-              seenAt: new Date(),
-            },
-          },
-        }
-      );
-    }
-
-    // Reset unread count
-    const unreadCounts = conversation.unreadCounts || {};
-    unreadCounts[userId.toString()] = 0;
-
-    await Conversation.findByIdAndUpdate(conversationId, {
-      unreadCounts: unreadCounts,
-      $addToSet: { seenBy: userId },
-    });
+    // ✅ Trả về unreadCount hiện tại (không reset)
+    const unreadCount =
+      conversation.unreadCounts instanceof Map
+        ? conversation.unreadCounts.get(userId.toString()) || 0
+        : conversation.unreadCounts?.[userId.toString()] || 0;
 
     res.json({
       success: true,
@@ -90,6 +65,7 @@ module.exports.getMessages = async (req, res) => {
         messages: messages.reverse(),
         hasMore: messages.length === parseInt(limit),
         page: parseInt(page),
+        unreadCount, // ✅ Thêm field này để frontend biết
       },
     });
   } catch (error) {
@@ -98,14 +74,13 @@ module.exports.getMessages = async (req, res) => {
   }
 };
 
-// Route: POST /api/v1/message/:conversationId
+// Các handler khác giữ nguyên...
 module.exports.sendMessage = async (req, res) => {
   try {
     const { conversationId } = req.params;
     const { content, type = "text", replyTo } = req.body;
     const userId = req.user.userId;
 
-    // Kiểm tra quyền
     const conversation = await Conversation.findOne({
       _id: conversationId,
       "participants.userId": userId,
@@ -114,11 +89,10 @@ module.exports.sendMessage = async (req, res) => {
     if (!conversation) {
       return res.status(403).json({
         success: false,
-        error: "Access denied",
+        message: "Bạn không được phép gửi tin nhắn vào đoạn chat này",
       });
     }
 
-    // Check if user left
     const userParticipant = conversation.participants.find(
       (p) => p.userId.toString() === userId.toString()
     );
@@ -126,18 +100,17 @@ module.exports.sendMessage = async (req, res) => {
     if (userParticipant?.leftAt) {
       return res.status(403).json({
         success: false,
-        error: "You have left this conversation",
+        message: "Bạn đã rời khỏi cuộc thảo luận này rồi",
       });
     }
 
     if (!content || !content.trim()) {
       return res.status(400).json({
         success: false,
-        error: "Content is required",
+        message: "Vui lòng nhập nội dung tin nhắn",
       });
     }
 
-    // Tạo message
     const message = await Message.create({
       conversationId,
       senderId: userId,
@@ -147,10 +120,11 @@ module.exports.sendMessage = async (req, res) => {
       seenBy: [{ userId: userId, seenAt: new Date() }],
     });
 
-    // Cập nhật conversation
-    const unreadCounts = conversation.unreadCounts || {};
+    const unreadCounts =
+      conversation.unreadCounts instanceof Map
+        ? Object.fromEntries(conversation.unreadCounts)
+        : { ...conversation.unreadCounts };
 
-    // Tăng unread count cho người khác
     conversation.participants.forEach((p) => {
       const participantId = p.userId.toString();
       if (participantId !== userId.toString() && !p.leftAt) {
@@ -172,7 +146,6 @@ module.exports.sendMessage = async (req, res) => {
       seenBy: [userId],
     });
 
-    // Populate message
     const populatedMessage = await Message.findById(message._id)
       .populate("senderId", "userName customName avatar")
       .populate({
