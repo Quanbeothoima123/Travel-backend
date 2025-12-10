@@ -28,4 +28,10 @@ module.exports = (io, socket) => {
     socket.leave(`conversation:${conversationId}`);
     console.log(`User ${socket.userId} left conversation ${conversationId}`);
   });
+
+  // ✅ NEW: Join user room để nhận conversation updates
+  socket.on("join-user-room", (userId) => {
+    socket.join(`user:${userId}`);
+    console.log(`User ${userId} joined personal room for sidebar updates`);
+  });
 };
