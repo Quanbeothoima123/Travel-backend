@@ -30,7 +30,16 @@ const UserSchema = new mongoose.Schema(
     status: { type: String, default: "initial" },
     deleted: { type: Boolean, default: false },
     deletedAt: Date,
+    isOnline: {
+      type: Boolean,
+      default: false,
+    },
+    lastOnline: {
+      type: Date,
+      default: Date.now,
+    },
   },
+
   {
     timestamps: true,
   }
