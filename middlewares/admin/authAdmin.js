@@ -31,6 +31,7 @@ module.exports.checkAuth = async (req, res, next) => {
 
     //  GẮN thông tin vào req và CHUYỂN TIẾP
     req.admin = admin;
+    req.admin.adminId = admin._id;
     req.adminId = admin._id;
     next(); //  Quan trọng: gọi next() thay vì return JSON
   } catch (err) {
