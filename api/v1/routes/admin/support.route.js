@@ -1,24 +1,11 @@
-// routes/supportAdmin.routes.js
+// routes/admin/support.routes.js
 const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/admin/support.controller");
-
+// GET /api/v1/admin/support - Get all conversations
 router.get("/", controller.getAllConversations);
-router.get(
-  "/:conversationId",
 
-  controller.getConversationDetailAdmin
-);
-router.patch("/:conversationId/join", controller.joinConversation);
-router.patch(
-  "/:conversationId/close",
-
-  controller.closeConversationAdmin
-);
-router.patch(
-  "/:conversationId/meta",
-
-  controller.updateConversationMeta
-);
+// GET /api/v1/admin/support/:conversationId - Get conversation detail
+router.get("/:conversationId", controller.getConversationDetailAdmin);
 
 module.exports = router;

@@ -1,172 +1,102 @@
-// controllers/supportClient.controller.js
+// controllers/client/support.controller.js - SIMPLIFIED
 const SupportConversation = require("../../models/support-conversation.model");
 const SupportMessage = require("../../models/support-message.model");
 const User = require("../../models/user.model");
 
-// [POST] Tạo cuộc trò chuyện mới
-module.exports.createConversation = async (req, res) => {
+// [GET] Lấy hoặc tạo conversation (1 user = 1 conversation)
+module.exports.getOrCreateConversation = async (req, res) => {
   try {
-    const { issueDescription, phoneNumber } = req.body;
     const userId = req.user.userId;
 
     if (!userId) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Chưa đăng nhập" });
-    }
-
-    const conversation = await SupportConversation.create({
-      user: userId,
-      issueDescription,
-      phoneNumber: phoneNumber || "",
-      status: "waiting",
-      unreadCount: { user: 0, admin: 1 },
-    });
-
-    await SupportMessage.create({
-      conversationId: conversation._id,
-      sender: userId,
-      senderType: "user",
-      content: issueDescription,
-      type: "text",
-      isSystemMessage: false,
-      seenBy: [userId],
-    });
-
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("new-support-conversation", {
-        conversationId: conversation._id,
-        user: await User.findById(userId).select("fullName email avatar"),
-        issueDescription,
-        createdAt: conversation.createdAt,
+      return res.status(401).json({
+        success: false,
+        message: "Chưa đăng nhập",
       });
     }
 
-    res.json({
-      success: true,
-      conversationId: conversation._id,
-      message: "Cuộc trò chuyện đã được tạo thành công",
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// [GET] Lấy lịch sử cuộc trò chuyện
-module.exports.getConversationHistory = async (req, res) => {
-  try {
-    const { conversationId } = req.params;
-    const userId = req.user.userId;
-
-    const conversation = await SupportConversation.findOne({
-      _id: conversationId,
+    // Tìm conversation hiện có
+    let conversation = await SupportConversation.findOne({
       user: userId,
     })
       .populate("user", "fullName email avatar")
-      .populate("assignedAdmin", "fullName email avatar");
+      .populate("assignedAdmin", "fullName email avatar")
+      .sort({ createdAt: -1 });
 
+    // Nếu chưa có, tạo mới
     if (!conversation) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy cuộc trò chuyện" });
+      conversation = await SupportConversation.create({
+        user: userId,
+        issueDescription: "Hỗ trợ chung",
+        status: "waiting",
+        unreadCount: { user: 0, admin: 0 },
+      });
+
+      await conversation.populate("user", "fullName email avatar");
+
+      // Notify admin
+      const io = req.app.get("io");
+      if (io) {
+        io.to("admin-room").emit("new-support-conversation", {
+          conversation,
+        });
+      }
     }
 
-    const messages = await SupportMessage.find({ conversationId })
-      .populate("sender", "fullName avatar")
-      .sort({ createdAt: 1 });
-
-    await SupportMessage.updateMany(
-      { conversationId, seenBy: { $ne: userId } },
-      { $addToSet: { seenBy: userId } }
-    );
-
+    // Reset unread count
     conversation.unreadCount.user = 0;
     await conversation.save();
 
     res.json({
       success: true,
       conversation,
-      messages,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("❌ Get or create conversation error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
-// [POST] Đóng cuộc trò chuyện
-module.exports.closeConversation = async (req, res) => {
+// [GET] Lấy lịch sử tin nhắn
+module.exports.getMessages = async (req, res) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user.userId;
 
+    // Verify quyền
     const conversation = await SupportConversation.findOne({
       _id: conversationId,
       user: userId,
     });
 
     if (!conversation) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy cuộc trò chuyện" });
-    }
-
-    conversation.status = "closed";
-    conversation.closedAt = new Date();
-    await conversation.save();
-
-    await SupportMessage.create({
-      conversationId,
-      sender: userId,
-      senderType: "system",
-      content: "Người dùng đã đóng cuộc trò chuyện",
-      type: "system",
-      isSystemMessage: true,
-    });
-
-    const io = req.app.get("io");
-    if (io) {
-      io.to(`support:${conversationId}`).emit("conversation-closed", {
-        conversationId,
-        closedBy: "user",
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy cuộc trò chuyện",
       });
     }
 
-    res.json({ success: true, message: "Cuộc trò chuyện đã đóng" });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
+    // Lấy messages
+    const messages = await SupportMessage.find({ conversationId })
+      .populate("sender", "fullName avatar")
+      .sort({ createdAt: 1 });
 
-// [POST] Gửi feedback
-module.exports.submitFeedback = async (req, res) => {
-  try {
-    const { conversationId } = req.params;
-    const { isResolved, rating, comment } = req.body;
-    const userId = req.user.userId;
-
-    const conversation = await SupportConversation.findOne({
-      _id: conversationId,
-      user: userId,
-    });
-
-    if (!conversation) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy cuộc trò chuyện" });
-    }
-
-    conversation.feedback = {
-      isResolved,
-      rating: isResolved ? rating : null,
-      comment: !isResolved ? comment : "",
-      submittedAt: new Date(),
-    };
-
+    // Mark as read
+    conversation.unreadCount.user = 0;
     await conversation.save();
 
-    res.json({ success: true, message: "Cảm ơn phản hồi của bạn!" });
+    res.json({
+      success: true,
+      messages,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("❌ Get messages error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
