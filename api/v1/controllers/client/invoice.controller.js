@@ -10,9 +10,12 @@ const emailService = require("../../../../services/emailService");
 const TourCategory = require("../../models/tour-category.model");
 const DOMAIN_WEBSITE = process.env.DOMAIN_WEBSITE || "http://localhost:3000";
 const DOMAIN_BACKEND = process.env.DOMAIN_BACKEND || "http://localhost:5000";
+const { sendToQueue } = require("../../../../config/rabbitmq");
 // [POST] /api/v1/invoices
 module.exports.createInvoice = async (req, res) => {
   try {
+    console.log(" createInvoice called - User ID:", req.user?.userId);
+
     const {
       tourId,
       departureDate,
@@ -30,20 +33,16 @@ module.exports.createInvoice = async (req, res) => {
     } = req.body;
 
     // Lấy userId từ JWT cookie
-    let userId = null;
-    const token = req.cookies?.authToken;
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        userId = decoded.userId;
-      } catch (err) {
-        userId = null; // token không hợp lệ
-      }
-    }
+    const userId = req.user.userId;
 
     // Lấy thông tin tour
     const tour = await Tour.findById(tourId);
-    if (!tour) return res.status(404).json({ message: "Tour not found" });
+    if (!tour) {
+      console.error(" Tour not found:", tourId);
+      return res.status(404).json({ message: "Không tìm thấy tour" });
+    }
+
+    console.log(" Tour found:", tour.title);
 
     // seatLimit = số chỗ tiêu chuẩn trong tour
     const seatLimit = tour.seats;
@@ -57,12 +56,20 @@ module.exports.createInvoice = async (req, res) => {
       (seatFor?.reduce((sum, s) => sum + s.quantity, 0) || 0) +
       (seatAddFor?.reduce((sum, s) => sum + s.quantity, 0) || 0);
 
+    console.log("📊 Booking details:", {
+      totalPeople,
+      totalPrice,
+      typeOfPayment,
+    });
+
     // set transactionId, datePayment, isPaid dựa theo typeOfPayment
     let transactionId = null;
     let isPaid = false;
     let datePayment = null;
+
     // tạo mã hóa đơn (backend tự sinh)
     const invoiceCode = generateInvoiceCode();
+    console.log("🎫 Invoice code generated:", invoiceCode);
 
     const newInvoice = new Invoice({
       invoiceCode,
@@ -90,7 +97,51 @@ module.exports.createInvoice = async (req, res) => {
       createdBy: null,
     });
 
+    // ===  GỬI NOTIFICATION VÀO RABBITMQ ===
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "user-action", // Phân biệt loại notification
+        category: "booking", // booking, payment, inquiry, etc.
+        title: "Đơn đặt tour mới",
+        message: `${nameOfUser} đã đặt tour ${tour.title}`,
+        data: {
+          invoiceCode,
+          tourName: tour.title,
+          userName: nameOfUser,
+          email,
+          phoneNumber,
+          totalPrice,
+          totalPeople,
+          departureDate,
+          typeOfPayment,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      console.log(
+        "📨 Preparing to send notification:",
+        notificationMessage.title
+      );
+
+      // Gửi vào queue notifications.user
+      const sent = await sendToQueue("notifications.user", notificationMessage);
+
+      if (sent) {
+        console.log(" Notification sent to RabbitMQ successfully");
+      } else {
+        console.error(" Failed to send notification to RabbitMQ");
+      }
+    } catch (queueError) {
+      //  Không fail request nếu notification lỗi
+      console.error(" RabbitMQ notification error:", queueError);
+    }
+
+    // === LƯU INVOICE ===
     await newInvoice.save();
+    console.log(" Invoice saved:", invoiceCode);
 
     res.status(201).json({
       success: true,
@@ -98,8 +149,8 @@ module.exports.createInvoice = async (req, res) => {
       invoice: newInvoice,
     });
   } catch (error) {
-    console.error("Error creating invoice:", error);
-    res.status(500).json({ message: "Có gì đó sai sai!" });
+    console.error(" Error creating invoice:", error);
+    res.status(500).json({ message: "Lỗi hệ thống!" });
   }
 };
 
@@ -121,19 +172,9 @@ module.exports.payWithMomo = async (req, res) => {
     } = req.body;
 
     // lấy userId từ token
-    let userId = null;
-    const token = req.cookies?.authToken;
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        userId = decoded.userId;
-      } catch (err) {
-        userId = null;
-      }
-    }
-
+    const userId = req.user.userId;
     const tour = await Tour.findById(tourId);
-    if (!tour) return res.status(404).json({ message: "Tour not found" });
+    if (!tour) return res.status(404).json({ message: "Không tìm thấy tour" });
 
     const seatLimit = tour.seats;
     const discountedBase =
@@ -144,7 +185,7 @@ module.exports.payWithMomo = async (req, res) => {
       (seatAddFor?.reduce((sum, s) => sum + s.quantity, 0) || 0);
 
     // tạo hóa đơn trước (pending)
-    const invoiceCode = "INV" + Date.now();
+    const invoiceCode = "MOMO" + Date.now();
 
     const invoice = new Invoice({
       invoiceCode,
@@ -471,7 +512,7 @@ module.exports.sendInvoiceEmail = async (req, res) => {
         .json({ success: false, message: emailResult.message });
     }
   } catch (error) {
-    console.error("❌ Error sendInvoiceEmail:", error);
+    console.error(" Error sendInvoiceEmail:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi server khi gửi email hóa đơn",
@@ -493,7 +534,7 @@ module.exports.getInvoices = async (req, res) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(authToken, process.env.JWT_SECRET);
+      decoded = jwt.verify(authToken, JWT_SECRET);
     } catch {
       return res.status(401).json({
         success: false,
