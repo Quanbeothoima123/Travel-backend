@@ -3,6 +3,7 @@ const Invoice = require("../../models/invoice.model");
 const Tour = require("../../models/tour.model");
 const User = require("../../models/user.model");
 const telegramBot = require("../../../../helpers/telegramBot");
+const generateInvoiceCode = require("../../../../utils/genCodeInvoice");
 //[GET] /api/v1/admin/invoice
 // Lấy danh sách invoice với filter, search, sort, pagination
 module.exports.index = async (req, res) => {
@@ -363,17 +364,7 @@ module.exports.create = async (req, res) => {
     }
 
     // Generate invoice code
-    const lastInvoice = await Invoice.findOne()
-      .sort({ createdAt: -1 })
-      .select("invoiceCode")
-      .lean();
-
-    let invoiceCode = "INV00001";
-    if (lastInvoice && lastInvoice.invoiceCode) {
-      const lastNumber = parseInt(lastInvoice.invoiceCode.replace("INV", ""));
-      const newNumber = lastNumber + 1;
-      invoiceCode = `INV${String(newNumber).padStart(5, "0")}`;
-    }
+    const invoiceCode = generateInvoiceCode();
 
     // Create invoice
     const newInvoice = new Invoice({
@@ -401,11 +392,10 @@ module.exports.create = async (req, res) => {
     });
 
     await newInvoice.save();
-
     // Lấy thông tin tour để gửi thông báo
     const tour = await Tour.findById(tourId).select("title").lean();
 
-    // 🔔 GỬI THÔNG BÁO TELEGRAM - ĐƠN HÀNG MỚI (CHƯA THANH TOÁN)
+    //  GỬI THÔNG BÁO TELEGRAM - ĐƠN HÀNG MỚI (CHƯA THANH TOÁN)
     telegramBot
       .notifyNewOrder({
         invoiceCode: newInvoice.invoiceCode,
@@ -419,7 +409,7 @@ module.exports.create = async (req, res) => {
         createdAt: newInvoice.createdAt,
       })
       .catch((err) => {
-        console.error("⚠️ Lỗi gửi thông báo Telegram:", err.message);
+        console.error(" Lỗi gửi thông báo Telegram:", err.message);
       });
 
     res.status(201).json({
