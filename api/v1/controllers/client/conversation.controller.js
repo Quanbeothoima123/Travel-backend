@@ -9,7 +9,6 @@ module.exports.getConversationList = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    // Tìm conversations mà user tham gia, chưa xóa và chưa rời
     const conversations = await Conversation.find({
       "participants.userId": userId,
       deletedFor: { $ne: userId },
@@ -24,15 +23,15 @@ module.exports.getConversationList = async (req, res) => {
       .limit(50)
       .lean();
 
-    // Format data cho frontend
     const formattedConversations = await Promise.all(
       conversations.map(async (conv) => {
-        // Fix: unreadCounts là object khi dùng .lean(), không phải Map
-        const unreadCount = conv.unreadCounts?.[userId.toString()] || 0;
+        // ✅ Fix unreadCounts handling
+        const unreadCount =
+          conv.unreadCounts instanceof Map
+            ? conv.unreadCounts.get(userId.toString()) || 0
+            : conv.unreadCounts?.[userId.toString()] || 0;
 
-        // Xử lý theo type
         if (conv.type === "private") {
-          // PRIVATE CHAT
           const otherParticipant = conv.participants.find(
             (p) => p.userId.toString() !== userId.toString()
           );
@@ -45,7 +44,6 @@ module.exports.getConversationList = async (req, res) => {
 
           if (!otherUser) return null;
 
-          // Lấy nickname nếu có
           const nicknameDoc = await Nickname.findOne({
             setBy: userId,
             forUser: otherUser._id,
@@ -59,6 +57,7 @@ module.exports.getConversationList = async (req, res) => {
               otherUser.customName ||
               otherUser.userName,
             avatar: otherUser.avatar,
+            otherUserId: otherUser._id.toString(), // ✅ Thêm field này
             lastMessage: conv.lastMessage
               ? {
                   content: conv.lastMessage.content,
@@ -99,7 +98,6 @@ module.exports.getConversationList = async (req, res) => {
       })
     );
 
-    // Lọc null values
     const validConversations = formattedConversations.filter(Boolean);
 
     res.json({ success: true, data: validConversations });
