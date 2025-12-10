@@ -7,6 +7,53 @@ const Filter = require("../../models/filter.model");
 const DepartPlace = require("../../models/depart-place.model");
 const Hotel = require("../../models/hotel.model");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
+
+//  lấy dữ liệu cho danh sách tour đưa ra giao diện
+module.exports.tourList = async (req, res, type) => {
+  try {
+    const tourList = await Tour.find({ type, active: true })
+      .limit(12)
+      .select(
+        "title thumbnail travelTimeId prices discount seats vehicleId hotelId frequency slug type"
+      )
+      .lean();
+
+    for (let item of tourList) {
+      item.vehicle = [];
+      const travelTime = await TravelTime.findById(item.travelTimeId).lean();
+      if (travelTime) {
+        item.day = travelTime.day;
+        item.night = travelTime.night;
+      }
+
+      const listVehicle = await Vehicle.find({ _id: item.vehicleId }).lean();
+      if (listVehicle.length > 0) {
+        item.vehicle = listVehicle.map((vehicle) => vehicle.name);
+      }
+
+      const frequencyObject = await Frequency.findOne({
+        _id: item.frequency,
+      }).lean();
+      item.frequency = frequencyObject?.title || "";
+
+      const hotelObject = await Hotel.findOne({ _id: item.hotelId })
+        .select("star")
+        .lean();
+      item.hotelStar = hotelObject?.star || 0;
+    }
+
+    res.json(tourList);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+module.exports.tourListDomestic = (req, res) =>
+  module.exports.tourList(req, res, "domestic");
+module.exports.tourListAboard = (req, res) =>
+  module.exports.tourList(req, res, "aboard");
+
 module.exports.getAllTour = async (req, res) => {
   try {
     const tours = await Tour.find({}, "title thumbnail slug");
