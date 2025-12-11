@@ -3,9 +3,13 @@ const Tour = require("../../models/tour.model");
 const TourCategory = require("../../models/tour-category.model");
 const GalleryCategory = require("../../models/gallery-category.model");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
+const { sendToQueue } = require("../../../../config/rabbitmq");
+const { logBusiness } = require("../../../../services/businessLog.service");
 // [POST] /api/v1/admin/gallery/create/:id
 module.exports.createGallery = async (req, res) => {
   try {
+    console.log("🆕 createGallery called - Admin ID:", req.admin?.adminId);
+
     const {
       title,
       shortDescription,
@@ -16,8 +20,11 @@ module.exports.createGallery = async (req, res) => {
       tags,
       tour,
       tourCategory,
-      galleryCategory, // THÊM MỚI
+      galleryCategory,
     } = req.body;
+
+    const adminId = req.admin?.adminId || req.admin?.id;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
 
     console.log("Request body:", req.body);
 
@@ -29,7 +36,6 @@ module.exports.createGallery = async (req, res) => {
       });
     }
 
-    // THÊM VALIDATION CHO galleryCategory (BẮT BUỘC)
     if (!galleryCategory) {
       return res.status(400).json({
         success: false,
@@ -73,11 +79,13 @@ module.exports.createGallery = async (req, res) => {
 
     // Tìm tour bằng _id (nếu có)
     let tourId = null;
+    let tourTitle = null;
     if (tour) {
       if (mongoose.Types.ObjectId.isValid(tour)) {
         const tourDoc = await Tour.findOne({ _id: tour, deleted: false });
         if (tourDoc) {
           tourId = tourDoc._id;
+          tourTitle = tourDoc.title;
           console.log("Found tour:", tourDoc.title);
         } else {
           console.log("Tour not found with _id:", tour);
@@ -135,9 +143,9 @@ module.exports.createGallery = async (req, res) => {
       images: processedImages,
       videos: processedVideos,
       tags: tags || [],
-      galleryCategory: galleryCategoryId, // BẮT BUỘC
+      galleryCategory: galleryCategoryId,
       createdBy: {
-        _id: req.admin?.id,
+        _id: adminId,
         time: new Date(),
       },
       views: 0,
@@ -146,7 +154,6 @@ module.exports.createGallery = async (req, res) => {
       deleted: false,
     };
 
-    // Chỉ thêm tour và tourCategory nếu có
     if (tourId) {
       galleryData.tour = tourId;
     }
@@ -157,12 +164,80 @@ module.exports.createGallery = async (req, res) => {
     const newGallery = new Gallery(galleryData);
     await newGallery.save();
 
+    console.log("✅ Gallery created:", newGallery.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "create",
+        model: "Gallery",
+        recordIds: [newGallery._id],
+        description: `Tạo gallery mới: ${newGallery.title}`,
+        details: {
+          galleryId: newGallery._id,
+          title: newGallery.title,
+          slug: newGallery.slug,
+          thumbnail: newGallery.thumbnail,
+          imagesCount: processedImages.length,
+          videosCount: processedVideos.length,
+          tagsCount: tags?.length || 0,
+          hasShortDescription: !!shortDescription,
+          hasLongDescription: !!longDescription,
+          linkedTour: tourTitle,
+          galleryCategoryId: galleryCategoryId,
+          tourCategoryId: tourCategoryId,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-management",
+        title: "Gallery mới được tạo",
+        message: `${adminName} đã tạo gallery mới: ${newGallery.title}`,
+        data: {
+          galleryId: newGallery._id,
+          title: newGallery.title,
+          slug: newGallery.slug,
+          thumbnail: newGallery.thumbnail,
+          imagesCount: processedImages.length,
+          videosCount: processedVideos.length,
+          linkedTour: tourTitle,
+          createdBy: adminName,
+          createdAt: newGallery.createdAt,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
     return res.status(201).json({
       success: true,
       message: "Tạo gallery thành công",
     });
   } catch (error) {
-    console.error("Error creating gallery:", error);
+    console.error("❌ createGallery error:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi server khi tạo gallery",
@@ -388,6 +463,9 @@ module.exports.updateGallery = async (req, res) => {
       galleryCategory,
     } = req.body;
 
+    const adminId = req.admin?.adminId || req.admin?.id;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
     // ✅ VALIDATION
     if (!title || !title.trim()) {
       return res.status(400).json({
@@ -410,7 +488,6 @@ module.exports.updateGallery = async (req, res) => {
       });
     }
 
-    // ✅ VALIDATION: Phải có ít nhất 1 trong 2 (images hoặc videos)
     const hasImages = images && Array.isArray(images) && images.length > 0;
     const hasVideos = videos && Array.isArray(videos) && videos.length > 0;
 
@@ -429,6 +506,18 @@ module.exports.updateGallery = async (req, res) => {
         message: "Không tìm thấy gallery",
       });
     }
+
+    // Lưu dữ liệu cũ để so sánh
+    const oldData = {
+      title: gallery.title,
+      thumbnail: gallery.thumbnail,
+      imagesCount: gallery.images?.length || 0,
+      videosCount: gallery.videos?.length || 0,
+      tagsCount: gallery.tags?.length || 0,
+      galleryCategory: gallery.galleryCategory,
+      tour: gallery.tour,
+      tourCategory: gallery.tourCategory,
+    };
 
     // Cập nhật thông tin bắt buộc
     gallery.title = title.trim();
@@ -478,7 +567,7 @@ module.exports.updateGallery = async (req, res) => {
       gallery.tourCategory = null;
     }
 
-    // ✅ Cập nhật images (có thể rỗng nếu có videos)
+    // ✅ Cập nhật images
     gallery.images = hasImages
       ? images
           .filter((img) => img.url)
@@ -488,7 +577,7 @@ module.exports.updateGallery = async (req, res) => {
           }))
       : [];
 
-    // ✅ Cập nhật videos (có thể rỗng nếu có images)
+    // ✅ Cập nhật videos
     gallery.videos = hasVideos
       ? videos
           .filter((vid) => vid.url)
@@ -499,11 +588,93 @@ module.exports.updateGallery = async (req, res) => {
       : [];
 
     gallery.updatedBy = {
-      _id: req.admin?.id,
+      _id: adminId,
       time: new Date(),
     };
 
     await gallery.save();
+
+    console.log("✅ Gallery updated:", gallery.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "update",
+        model: "Gallery",
+        recordIds: [gallery._id],
+        description: `Cập nhật gallery: ${gallery.title}`,
+        details: {
+          galleryId: gallery._id,
+          oldData: {
+            title: oldData.title,
+            thumbnail: oldData.thumbnail,
+            imagesCount: oldData.imagesCount,
+            videosCount: oldData.videosCount,
+            tagsCount: oldData.tagsCount,
+          },
+          newData: {
+            title: gallery.title,
+            thumbnail: gallery.thumbnail,
+            imagesCount: gallery.images.length,
+            videosCount: gallery.videos.length,
+            tagsCount: gallery.tags.length,
+          },
+          changes: {
+            titleChanged: oldData.title !== gallery.title,
+            thumbnailChanged: oldData.thumbnail !== gallery.thumbnail,
+            imagesChanged: oldData.imagesCount !== gallery.images.length,
+            videosChanged: oldData.videosCount !== gallery.videos.length,
+            tagsChanged: oldData.tagsCount !== gallery.tags.length,
+            galleryCategoryChanged:
+              oldData.galleryCategory?.toString() !==
+              gallery.galleryCategory?.toString(),
+            tourChanged: oldData.tour?.toString() !== gallery.tour?.toString(),
+          },
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-management",
+        title: "Gallery được cập nhật",
+        message: `${adminName} đã cập nhật gallery: ${gallery.title}`,
+        data: {
+          galleryId: gallery._id,
+          title: gallery.title,
+          slug: gallery.slug,
+          thumbnail: gallery.thumbnail,
+          imagesCount: gallery.images.length,
+          videosCount: gallery.videos.length,
+          updatedBy: adminName,
+          updatedAt: gallery.updatedAt,
+          oldTitle: oldData.title !== gallery.title ? oldData.title : null,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
 
     // Populate để trả về đầy đủ thông tin
     await gallery.populate([
@@ -518,7 +689,7 @@ module.exports.updateGallery = async (req, res) => {
       data: gallery,
     });
   } catch (error) {
-    console.error("Error updating gallery:", error);
+    console.error("❌ updateGallery error:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi khi cập nhật gallery",
@@ -528,9 +699,295 @@ module.exports.updateGallery = async (req, res) => {
 };
 
 // [DELETE] /api/v1/admin/gallery/delete/:id
-module.exports.deleteGallery = async (req, res) => {
+module.exports.createGallery = async (req, res) => {
+  try {
+    console.log("🆕 createGallery called - Admin ID:", req.admin?.adminId);
+
+    const {
+      title,
+      shortDescription,
+      longDescription,
+      thumbnail,
+      images,
+      videos,
+      tags,
+      tour,
+      tourCategory,
+      galleryCategory,
+    } = req.body;
+
+    const adminId = req.admin?.adminId || req.admin?.id;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
+    console.log("Request body:", req.body);
+
+    // Validate required fields
+    if (!title || !thumbnail) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu thông tin bắt buộc (title, thumbnail)",
+      });
+    }
+
+    if (!galleryCategory) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng chọn danh mục Gallery",
+      });
+    }
+
+    // Kiểm tra ít nhất có ảnh hoặc video
+    if ((!images || images.length === 0) && (!videos || videos.length === 0)) {
+      return res.status(400).json({
+        success: false,
+        message: "Cần có ít nhất một ảnh hoặc video",
+      });
+    }
+
+    const mongoose = require("mongoose");
+
+    // Xử lý galleryCategory (BẮT BUỘC)
+    let galleryCategoryId = null;
+    if (mongoose.Types.ObjectId.isValid(galleryCategory)) {
+      const galleryCategoryDoc = await GalleryCategory.findOne({
+        _id: galleryCategory,
+        deleted: false,
+      });
+
+      if (galleryCategoryDoc) {
+        galleryCategoryId = galleryCategoryDoc._id;
+        console.log("Found galleryCategory:", galleryCategoryDoc.title);
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: "Danh mục Gallery không tồn tại hoặc đã bị xóa",
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "ID danh mục Gallery không hợp lệ",
+      });
+    }
+
+    // Tìm tour bằng _id (nếu có)
+    let tourId = null;
+    let tourTitle = null;
+    if (tour) {
+      if (mongoose.Types.ObjectId.isValid(tour)) {
+        const tourDoc = await Tour.findOne({ _id: tour, deleted: false });
+        if (tourDoc) {
+          tourId = tourDoc._id;
+          tourTitle = tourDoc.title;
+          console.log("Found tour:", tourDoc.title);
+        } else {
+          console.log("Tour not found with _id:", tour);
+        }
+      } else {
+        console.log("Invalid tour _id:", tour);
+      }
+    }
+
+    // Kiểm tra và lấy tourCategory bằng _id (nếu có)
+    let tourCategoryId = null;
+    if (tourCategory) {
+      if (mongoose.Types.ObjectId.isValid(tourCategory)) {
+        const tourCategoryDoc = await TourCategory.findOne({
+          _id: tourCategory,
+          deleted: false,
+        });
+        if (tourCategoryDoc) {
+          tourCategoryId = tourCategoryDoc._id;
+          console.log("Found tourCategory:", tourCategoryDoc.title);
+        } else {
+          console.log("TourCategory not found with _id:", tourCategory);
+        }
+      } else {
+        console.log("Invalid tourCategory _id:", tourCategory);
+      }
+    }
+
+    // Xử lý images
+    const processedImages = images
+      ? images
+          .filter((img) => img.url)
+          .map((img) => ({
+            url: img.url,
+            title: img.title?.trim() || undefined,
+          }))
+      : [];
+
+    // Xử lý videos
+    const processedVideos = videos
+      ? videos
+          .filter((vid) => vid.url)
+          .map((vid) => ({
+            url: vid.url,
+            title: vid.title?.trim() || undefined,
+          }))
+      : [];
+
+    // Tạo gallery mới
+    const galleryData = {
+      title: title.trim(),
+      shortDescription: shortDescription?.trim() || undefined,
+      longDescription: longDescription?.trim() || undefined,
+      thumbnail,
+      images: processedImages,
+      videos: processedVideos,
+      tags: tags || [],
+      galleryCategory: galleryCategoryId,
+      createdBy: {
+        _id: adminId,
+        time: new Date(),
+      },
+      views: 0,
+      likes: 0,
+      shares: 0,
+      deleted: false,
+    };
+
+    if (tourId) {
+      galleryData.tour = tourId;
+    }
+    if (tourCategoryId) {
+      galleryData.tourCategory = tourCategoryId;
+    }
+
+    const newGallery = new Gallery(galleryData);
+    await newGallery.save();
+
+    console.log("✅ Gallery created:", newGallery.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "create",
+        model: "Gallery",
+        recordIds: [newGallery._id],
+        description: `Tạo gallery mới: ${newGallery.title}`,
+        details: {
+          galleryId: newGallery._id,
+          title: newGallery.title,
+          slug: newGallery.slug,
+          thumbnail: newGallery.thumbnail,
+          imagesCount: processedImages.length,
+          videosCount: processedVideos.length,
+          tagsCount: tags?.length || 0,
+          hasShortDescription: !!shortDescription,
+          hasLongDescription: !!longDescription,
+          linkedTour: tourTitle,
+          galleryCategoryId: galleryCategoryId,
+          tourCategoryId: tourCategoryId,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-management",
+        title: "Gallery mới được tạo",
+        message: `${adminName} đã tạo gallery mới: ${newGallery.title}`,
+        data: {
+          galleryId: newGallery._id,
+          title: newGallery.title,
+          slug: newGallery.slug,
+          thumbnail: newGallery.thumbnail,
+          imagesCount: processedImages.length,
+          videosCount: processedVideos.length,
+          linkedTour: tourTitle,
+          createdBy: adminName,
+          createdAt: newGallery.createdAt,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Tạo gallery thành công",
+    });
+  } catch (error) {
+    console.error("❌ createGallery error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server khi tạo gallery",
+      error: error.message,
+    });
+  }
+};
+module.exports.updateGallery = async (req, res) => {
   try {
     const { id } = req.params;
+    const {
+      title,
+      shortDescription,
+      longDescription,
+      thumbnail,
+      images,
+      videos,
+      tags,
+      tour,
+      tourCategory,
+      galleryCategory,
+    } = req.body;
+
+    const adminId = req.admin?.adminId || req.admin?.id;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
+    // ✅ VALIDATION
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Tiêu đề không được để trống",
+      });
+    }
+
+    if (!thumbnail) {
+      return res.status(400).json({
+        success: false,
+        message: "Thumbnail không được để trống",
+      });
+    }
+
+    if (!galleryCategory) {
+      return res.status(400).json({
+        success: false,
+        message: "Danh mục Gallery không được để trống",
+      });
+    }
+
+    const hasImages = images && Array.isArray(images) && images.length > 0;
+    const hasVideos = videos && Array.isArray(videos) && videos.length > 0;
+
+    if (!hasImages && !hasVideos) {
+      return res.status(400).json({
+        success: false,
+        message: "Phải có ít nhất một ảnh hoặc video",
+      });
+    }
 
     const gallery = await Gallery.findOne({ _id: id, deleted: false });
 
@@ -541,19 +998,296 @@ module.exports.deleteGallery = async (req, res) => {
       });
     }
 
+    // Lưu dữ liệu cũ để so sánh
+    const oldData = {
+      title: gallery.title,
+      thumbnail: gallery.thumbnail,
+      imagesCount: gallery.images?.length || 0,
+      videosCount: gallery.videos?.length || 0,
+      tagsCount: gallery.tags?.length || 0,
+      galleryCategory: gallery.galleryCategory,
+      tour: gallery.tour,
+      tourCategory: gallery.tourCategory,
+    };
+
+    // Cập nhật thông tin bắt buộc
+    gallery.title = title.trim();
+    gallery.thumbnail = thumbnail;
+    gallery.shortDescription = shortDescription?.trim() || "";
+    gallery.longDescription = longDescription?.trim() || "";
+    gallery.tags = tags || [];
+
+    // ✅ Cập nhật galleryCategory (BẮT BUỘC)
+    const galleryCategoryDoc = await GalleryCategory.findOne({
+      _id: galleryCategory,
+      deleted: false,
+    });
+
+    if (!galleryCategoryDoc) {
+      return res.status(400).json({
+        success: false,
+        message: "Danh mục Gallery không hợp lệ",
+      });
+    }
+    gallery.galleryCategory = galleryCategoryDoc._id;
+
+    // ✅ Cập nhật tour (TÙY CHỌN)
+    if (tour) {
+      const tourDoc = await Tour.findOne({ _id: tour, deleted: false });
+      if (tourDoc) {
+        gallery.tour = tourDoc._id;
+      } else {
+        gallery.tour = null;
+      }
+    } else {
+      gallery.tour = null;
+    }
+
+    // ✅ Cập nhật tourCategory (TÙY CHỌN)
+    if (tourCategory) {
+      const tourCategoryDoc = await TourCategory.findOne({
+        _id: tourCategory,
+        deleted: false,
+      });
+      if (tourCategoryDoc) {
+        gallery.tourCategory = tourCategoryDoc._id;
+      } else {
+        gallery.tourCategory = null;
+      }
+    } else {
+      gallery.tourCategory = null;
+    }
+
+    // ✅ Cập nhật images
+    gallery.images = hasImages
+      ? images
+          .filter((img) => img.url)
+          .map((img) => ({
+            url: img.url,
+            title: img.title?.trim() || "",
+          }))
+      : [];
+
+    // ✅ Cập nhật videos
+    gallery.videos = hasVideos
+      ? videos
+          .filter((vid) => vid.url)
+          .map((vid) => ({
+            url: vid.url,
+            title: vid.title?.trim() || "",
+          }))
+      : [];
+
+    gallery.updatedBy = {
+      _id: adminId,
+      time: new Date(),
+    };
+
+    await gallery.save();
+
+    console.log("✅ Gallery updated:", gallery.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "update",
+        model: "Gallery",
+        recordIds: [gallery._id],
+        description: `Cập nhật gallery: ${gallery.title}`,
+        details: {
+          galleryId: gallery._id,
+          oldData: {
+            title: oldData.title,
+            thumbnail: oldData.thumbnail,
+            imagesCount: oldData.imagesCount,
+            videosCount: oldData.videosCount,
+            tagsCount: oldData.tagsCount,
+          },
+          newData: {
+            title: gallery.title,
+            thumbnail: gallery.thumbnail,
+            imagesCount: gallery.images.length,
+            videosCount: gallery.videos.length,
+            tagsCount: gallery.tags.length,
+          },
+          changes: {
+            titleChanged: oldData.title !== gallery.title,
+            thumbnailChanged: oldData.thumbnail !== gallery.thumbnail,
+            imagesChanged: oldData.imagesCount !== gallery.images.length,
+            videosChanged: oldData.videosCount !== gallery.videos.length,
+            tagsChanged: oldData.tagsCount !== gallery.tags.length,
+            galleryCategoryChanged:
+              oldData.galleryCategory?.toString() !==
+              gallery.galleryCategory?.toString(),
+            tourChanged: oldData.tour?.toString() !== gallery.tour?.toString(),
+          },
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-management",
+        title: "Gallery được cập nhật",
+        message: `${adminName} đã cập nhật gallery: ${gallery.title}`,
+        data: {
+          galleryId: gallery._id,
+          title: gallery.title,
+          slug: gallery.slug,
+          thumbnail: gallery.thumbnail,
+          imagesCount: gallery.images.length,
+          videosCount: gallery.videos.length,
+          updatedBy: adminName,
+          updatedAt: gallery.updatedAt,
+          oldTitle: oldData.title !== gallery.title ? oldData.title : null,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
+    // Populate để trả về đầy đủ thông tin
+    await gallery.populate([
+      { path: "tour", select: "title slug _id" },
+      { path: "tourCategory", select: "title slug _id" },
+      { path: "galleryCategory", select: "title slug _id" },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Cập nhật gallery thành công",
+      data: gallery,
+    });
+  } catch (error) {
+    console.error("❌ updateGallery error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi khi cập nhật gallery",
+      error: error.message,
+    });
+  }
+};
+
+module.exports.deleteGallery = async (req, res) => {
+  try {
+    console.log("🗑️ deleteGallery called - Admin ID:", req.admin?.adminId);
+
+    const { id } = req.params;
+    const adminId = req.admin?.adminId || req.admin?.id;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
+    const gallery = await Gallery.findOne({ _id: id, deleted: false });
+
+    if (!gallery) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy gallery",
+      });
+    }
+
+    // Lưu thông tin trước khi xóa
+    const galleryInfo = {
+      id: gallery._id,
+      title: gallery.title,
+      slug: gallery.slug,
+      imagesCount: gallery.images?.length || 0,
+      videosCount: gallery.videos?.length || 0,
+    };
+
     gallery.deleted = true;
     gallery.deletedBy = {
-      _id: req.admin?.id,
+      _id: adminId,
       time: new Date(),
     };
     await gallery.save();
+
+    console.log("✅ Gallery deleted:", galleryInfo.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "delete",
+        model: "Gallery",
+        recordIds: [gallery._id],
+        description: `Xóa gallery: ${galleryInfo.title}`,
+        details: {
+          galleryId: galleryInfo.id,
+          title: galleryInfo.title,
+          slug: galleryInfo.slug,
+          imagesCount: galleryInfo.imagesCount,
+          videosCount: galleryInfo.videosCount,
+          deletedAt: new Date(),
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-management",
+        title: "Gallery bị xóa",
+        message: `${adminName} đã xóa gallery: ${galleryInfo.title}`,
+        data: {
+          galleryId: galleryInfo.id,
+          title: galleryInfo.title,
+          slug: galleryInfo.slug,
+          imagesCount: galleryInfo.imagesCount,
+          videosCount: galleryInfo.videosCount,
+          deletedBy: adminName,
+          deletedAt: new Date().toISOString(),
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
 
     return res.status(200).json({
       success: true,
       message: "Xóa gallery thành công",
     });
   } catch (error) {
-    console.error("Error deleting gallery:", error);
+    console.error("❌ deleteGallery error:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi khi xóa gallery",
@@ -781,7 +1515,12 @@ module.exports.index = async (req, res) => {
 // [PATCH] /api/v1/admin/gallery/toggle-active/:id
 module.exports.toggleActive = async (req, res) => {
   try {
+    console.log("🔄 toggleActive called - Admin ID:", req.admin?.adminId);
+
     const { id } = req.params;
+    const adminId = req.admin?.adminId || req.admin?.id;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
     const gallery = await Gallery.findById(id);
 
     if (!gallery) {
@@ -791,22 +1530,85 @@ module.exports.toggleActive = async (req, res) => {
       });
     }
 
+    const oldActive = gallery.active;
     gallery.active = !gallery.active;
     gallery.updatedBy = {
-      _id: req.admin?.id,
+      _id: adminId,
       time: new Date(),
     };
     await gallery.save();
 
+    const actionText = gallery.active ? "Kích hoạt" : "Vô hiệu hóa";
+    console.log(`✅ Gallery ${actionText.toLowerCase()}:`, gallery.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "update",
+        model: "Gallery",
+        recordIds: [gallery._id],
+        description: `${actionText} gallery: ${gallery.title}`,
+        details: {
+          galleryId: gallery._id,
+          title: gallery.title,
+          slug: gallery.slug,
+          oldActive: oldActive,
+          newActive: gallery.active,
+          actionType: "toggle_active",
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-management",
+        title: `Gallery ${
+          gallery.active ? "được kích hoạt" : "bị vô hiệu hóa"
+        }`,
+        message: `${adminName} đã ${actionText.toLowerCase()} gallery: ${
+          gallery.title
+        }`,
+        data: {
+          galleryId: gallery._id,
+          title: gallery.title,
+          slug: gallery.slug,
+          active: gallery.active,
+          changedBy: adminName,
+          changedAt: new Date().toISOString(),
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
     return res.status(200).json({
       success: true,
-      message: `${
-        gallery.active ? "Kích hoạt" : "Vô hiệu hóa"
-      } gallery thành công`,
+      message: `${actionText} gallery thành công`,
       active: gallery.active,
     });
   } catch (error) {
-    console.error("Error toggling active:", error);
+    console.error("❌ toggleActive error:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi server",
