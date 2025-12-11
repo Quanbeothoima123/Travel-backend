@@ -3,6 +3,8 @@ const buildTree = require("../../../../helpers/buildTree");
 const createSlug = require("../../../../helpers/createSlug");
 const collectDescendants = require("../../../../helpers/collectDescendants");
 const mongoose = require("mongoose");
+const { sendToQueue } = require("../../../../config/rabbitmq");
+const { logBusiness } = require("../../../../services/businessLog.service");
 // [GET] /gallery-category
 module.exports.getAllCategories = async (req, res) => {
   try {
@@ -132,7 +134,15 @@ module.exports.getCategoryById = async (req, res) => {
  */
 module.exports.createCategory = async (req, res) => {
   try {
+    console.log(
+      "🆕 createGalleryCategory called - Admin ID:",
+      req.admin?.adminId
+    );
+
     const { title, parentId, active } = req.body;
+    const adminId = req.admin?.adminId;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
     const slug = createSlug(title);
     const newCategory = new GalleryCategory({
       title,
@@ -141,9 +151,71 @@ module.exports.createCategory = async (req, res) => {
       active,
     });
     await newCategory.save();
+
+    console.log("✅ Gallery category created:", newCategory.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "create",
+        model: "GalleryCategory",
+        recordIds: [newCategory._id],
+        description: `Tạo danh mục gallery: ${newCategory.title}`,
+        details: {
+          categoryId: newCategory._id,
+          categoryTitle: newCategory.title,
+          categorySlug: newCategory.slug,
+          parentId: newCategory.parentId,
+          active: newCategory.active,
+          hasParent: !!newCategory.parentId,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-category-management",
+        title: "Danh mục gallery mới được tạo",
+        message: `${adminName} đã tạo danh mục gallery: ${newCategory.title}`,
+        data: {
+          categoryId: newCategory._id,
+          categoryTitle: newCategory.title,
+          categorySlug: newCategory.slug,
+          parentId: newCategory.parentId,
+          hasParent: !!newCategory.parentId,
+          active: newCategory.active,
+          createdBy: adminName,
+          createdAt: newCategory.createdAt,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
     res.status(201).json(newCategory);
   } catch (error) {
-    console.error("Lỗi tạo danh mục gallery:", error);
+    console.error("❌ createGalleryCategory error:", error);
     res.status(500).json({ message: "Lỗi tạo danh mục", error: error.message });
   }
 };
@@ -153,11 +225,26 @@ module.exports.createCategory = async (req, res) => {
  */
 module.exports.updateCategory = async (req, res) => {
   try {
+    console.log(
+      "✏️ updateGalleryCategory called - Admin ID:",
+      req.admin?.adminId
+    );
+
     const { id } = req.params;
     let { title, parentId, slug, active } = req.body;
+    const adminId = req.admin?.adminId;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID không hợp lệ" });
+    }
+
+    // Lấy dữ liệu cũ để so sánh
+    const oldCategory = await GalleryCategory.findById(id);
+    if (!oldCategory) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy danh mục gallery" });
     }
 
     // Nếu không nhập slug thì tự sinh từ title
@@ -171,7 +258,7 @@ module.exports.updateCategory = async (req, res) => {
       _id: { $ne: id },
     });
     if (existed) {
-      return res.status(400).json({ message: "Slug gallery này đã tồn tại!." });
+      return res.status(400).json({ message: "Slug gallery này đã tồn tại!" });
     }
 
     const updated = await GalleryCategory.findByIdAndUpdate(
@@ -188,22 +275,91 @@ module.exports.updateCategory = async (req, res) => {
       { new: true }
     );
 
-    if (!updated) {
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy danh mục gallery" });
+    console.log("✅ Gallery category updated:", updated.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "update",
+        model: "GalleryCategory",
+        recordIds: [updated._id],
+        description: `Cập nhật danh mục gallery: ${updated.title}`,
+        details: {
+          categoryId: updated._id,
+          oldData: {
+            title: oldCategory.title,
+            slug: oldCategory.slug,
+            parentId: oldCategory.parentId,
+            active: oldCategory.active,
+          },
+          newData: {
+            title: updated.title,
+            slug: updated.slug,
+            parentId: updated.parentId,
+            active: updated.active,
+          },
+          changes: {
+            titleChanged: oldCategory.title !== updated.title,
+            slugChanged: oldCategory.slug !== updated.slug,
+            parentChanged:
+              oldCategory.parentId?.toString() !== updated.parentId?.toString(),
+            activeChanged: oldCategory.active !== updated.active,
+          },
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-category-management",
+        title: "Danh mục gallery được cập nhật",
+        message: `${adminName} đã cập nhật danh mục gallery: ${updated.title}`,
+        data: {
+          categoryId: updated._id,
+          categoryTitle: updated.title,
+          categorySlug: updated.slug,
+          parentId: updated.parentId,
+          active: updated.active,
+          updatedBy: adminName,
+          updatedAt: updated.updatedAt,
+          oldTitle:
+            oldCategory.title !== updated.title ? oldCategory.title : null,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
     }
 
     res.json(updated);
   } catch (error) {
-    console.error("Lỗi cập nhật danh mục gallery:", error);
+    console.error("❌ updateGalleryCategory error:", error);
     res.status(500).json({
       message: "Lỗi cập nhật danh mục gallery",
       error: error.message,
     });
   }
 };
-
 /**
  * GET /api/v1/gallery-category/delete-info/:id
  * Lấy thông tin trước khi xóa
@@ -247,11 +403,20 @@ module.exports.getDeleteCategoryInfo = async (req, res) => {
  */
 module.exports.deleteCategory = async (req, res) => {
   try {
+    console.log(
+      "🗑️ deleteGalleryCategory called - Admin ID:",
+      req.admin?.adminId
+    );
+
     const { id } = req.params;
+    const adminId = req.admin?.adminId;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID không hợp lệ" });
     }
-    // Không cho xóa danh mục du lịch cha
+
+    // Không cho xóa danh mục gallery cha
     if (id === "68a2823b697ecb95bf141382") {
       return res
         .status(400)
@@ -269,10 +434,77 @@ module.exports.deleteCategory = async (req, res) => {
     );
     const deleteIds = collectDescendants(id, categoryMap);
 
+    // Lấy danh sách title của các category bị xóa để ghi log
+    const deletedCategories = allCategories
+      .filter((c) => deleteIds.includes(c._id.toString()))
+      .map((c) => ({ id: c._id, title: c.title }));
+
     await GalleryCategory.updateMany(
       { _id: { $in: deleteIds } },
       { $set: { deleted: true, deletedAt: new Date() } }
     );
+
+    console.log(`✅ Deleted ${deleteIds.length} gallery categories`);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "delete",
+        model: "GalleryCategory",
+        recordIds: deleteIds.map((id) => new mongoose.Types.ObjectId(id)),
+        description: `Xóa danh mục gallery "${category.title}" và ${
+          deleteIds.length - 1
+        } danh mục con`,
+        details: {
+          mainCategoryId: id,
+          mainCategoryTitle: category.title,
+          totalDeleted: deleteIds.length,
+          deletedCategories: deletedCategories,
+          isRecursiveDelete: deleteIds.length > 1,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "gallery-category-management",
+        title: "Danh mục gallery bị xóa",
+        message: `${adminName} đã xóa danh mục gallery "${category.title}"${
+          deleteIds.length > 1 ? ` và ${deleteIds.length - 1} danh mục con` : ""
+        }`,
+        data: {
+          mainCategoryId: id,
+          mainCategoryTitle: category.title,
+          totalDeleted: deleteIds.length,
+          deletedCategories: deletedCategories.slice(0, 5), // Giới hạn 5 items đầu
+          deletedBy: adminName,
+          deletedAt: new Date().toISOString(),
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
 
     res.json({
       success: true,
@@ -280,7 +512,7 @@ module.exports.deleteCategory = async (req, res) => {
       affectedCount: deleteIds.length,
     });
   } catch (error) {
-    console.error("Xóa danh mục gallery không thành công:", error);
+    console.error("❌ deleteGalleryCategory error:", error);
     res.status(500).json({
       success: false,
       message: "Lỗi xóa danh mục gallery",
@@ -288,7 +520,6 @@ module.exports.deleteCategory = async (req, res) => {
     });
   }
 };
-
 /**
  * GET /api/v1/admin/news-category/latest-updated
  * Lấy ID của danh mục được cập nhật mới nhất
