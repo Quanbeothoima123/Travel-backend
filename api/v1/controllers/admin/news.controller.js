@@ -6,10 +6,13 @@ const User = require("../../models/user.model");
 const Comment = require("../../models/comment.model");
 const mongoose = require("mongoose");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
+const { sendToQueue } = require("../../../../config/rabbitmq");
+const { logBusiness } = require("../../../../services/businessLog.service");
 module.exports.create = async (req, res) => {
   try {
     const data = req.body;
-    const adminId = req.admin.adminId;
+    const adminId = req.admin?.adminId;
+    const adminName = req.admin?.fullName || req.admin?.email || "Admin";
 
     // Gắn thêm author & createdBy
     const news = new News({
@@ -20,12 +23,75 @@ module.exports.create = async (req, res) => {
 
     await news.save();
 
+    console.log("✅ News created:", news.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "create",
+        model: "News",
+        recordIds: [news._id],
+        description: `Tạo bài viết: ${news.title}`,
+        details: {
+          newsId: news._id,
+          newsTitle: news.title,
+          newsSlug: news.slug,
+          status: news.status,
+          categoryId: news.newsCategoryId || news.categoryId,
+          publishedAt: news.publishedAt,
+          featured: news.featured,
+          tags: news.tags,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "news-management",
+        title: "Bài viết mới được tạo",
+        message: `${adminName} đã tạo bài viết: ${news.title}`,
+        data: {
+          newsId: news._id,
+          newsTitle: news.title,
+          newsSlug: news.slug,
+          status: news.status,
+          createdBy: adminName,
+          createdAt: news.createdAt,
+          isPublished: news.status === "published",
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
     return res.status(201).json({
       success: true,
       message: "Tạo bài viết thành công",
       data: news,
     });
   } catch (error) {
+    console.error("❌ Error in createNews:", error);
     return res.status(500).json({
       success: false,
       message: "Có lỗi xảy ra",
@@ -384,7 +450,8 @@ module.exports.getNewsById = async (req, res) => {
 module.exports.deleteNews = async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.admin?._id; // Assuming you have admin info in req
+    const adminId = req.admin?._id || req.admin?.adminId;
+    const adminName = req.admin?.fullName || req.admin?.email || "Admin";
 
     const news = await News.findOne({ _id: id, deleted: false });
 
@@ -394,6 +461,16 @@ module.exports.deleteNews = async (req, res) => {
         message: "Không tìm thấy tin tức",
       });
     }
+
+    // Lưu thông tin trước khi xóa
+    const newsInfo = {
+      id: news._id,
+      title: news.title,
+      slug: news.slug,
+      status: news.status,
+      categoryId: news.newsCategoryId || news.categoryId,
+      publishedAt: news.publishedAt,
+    };
 
     // Soft delete
     await News.findByIdAndUpdate(id, {
@@ -405,12 +482,75 @@ module.exports.deleteNews = async (req, res) => {
       },
     });
 
+    console.log("✅ News soft deleted:", newsInfo.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "delete",
+        model: "News",
+        recordIds: [newsInfo.id],
+        description: `Xóa bài viết: ${newsInfo.title}`,
+        details: {
+          newsId: newsInfo.id,
+          newsTitle: newsInfo.title,
+          newsSlug: newsInfo.slug,
+          previousStatus: newsInfo.status,
+          wasPublished: newsInfo.status === "published",
+          publishedAt: newsInfo.publishedAt,
+          deletedAt: new Date(),
+          deletionType: "soft_delete",
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "news-management",
+        title: "Bài viết đã bị xóa",
+        message: `${adminName} đã xóa bài viết: ${newsInfo.title}`,
+        data: {
+          newsId: newsInfo.id,
+          newsTitle: newsInfo.title,
+          newsSlug: newsInfo.slug,
+          previousStatus: newsInfo.status,
+          deletedBy: adminName,
+          deletedAt: new Date().toISOString(),
+          canRestore: true,
+          wasPublished: newsInfo.status === "published", // Quan trọng nếu bài đã publish
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Delete notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
     return res.status(200).json({
       success: true,
       message: "Xóa tin tức thành công",
     });
   } catch (error) {
-    console.error("Error in deleteNews:", error);
+    console.error("❌ Error in deleteNews:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi server khi xóa tin tức",
@@ -611,8 +751,13 @@ module.exports.getNewsForEdit = async (req, res) => {
 // PATCH /api/v1/admin/news/:id - Cập nhật tin tức
 module.exports.updateNews = async (req, res) => {
   try {
+    console.log("📝 updateNews called - Admin ID:", req.user?.id);
+
     const { id } = req.params;
     const updateData = req.body;
+    const adminId = req.user?.id || req.admin?.adminId;
+    const adminName =
+      req.user?.fullName || req.admin?.fullName || req.admin?.email || "Admin";
 
     // Validate ObjectId
     if (!id.match(/^[0-9a-fA-F]{24}$/)) {
@@ -630,6 +775,16 @@ module.exports.updateNews = async (req, res) => {
         message: "Không tìm thấy tin tức hoặc tin tức đã bị xóa",
       });
     }
+
+    // Lưu old data để track changes
+    const oldData = {
+      title: existingNews.title,
+      slug: existingNews.slug,
+      status: existingNews.status,
+      featured: existingNews.featured,
+      publishedAt: existingNews.publishedAt,
+      categoryId: existingNews.newsCategoryId || existingNews.categoryId,
+    };
 
     // Check slug uniqueness (exclude current news)
     if (updateData.slug && updateData.slug !== existingNews.slug) {
@@ -650,14 +805,10 @@ module.exports.updateNews = async (req, res) => {
     // Prepare update data
     const processedData = {
       ...updateData,
-
-      // Convert datetime-local format back to Date objects
       publishedAt: updateData.publishedAt
         ? new Date(updateData.publishedAt)
         : null,
       eventDate: updateData.eventDate ? new Date(updateData.eventDate) : null,
-
-      // Handle arrays - ensure they're arrays and filter out empty values
       tags: Array.isArray(updateData.tags)
         ? updateData.tags.filter((tag) => tag && tag.trim())
         : [],
@@ -667,8 +818,6 @@ module.exports.updateNews = async (req, res) => {
       metaKeywords: Array.isArray(updateData.metaKeywords)
         ? updateData.metaKeywords.filter((keyword) => keyword && keyword.trim())
         : [],
-
-      // Handle ObjectId references
       newsCategoryId: updateData.newsCategoryId || null,
       categoryId: updateData.categoryId || null,
       destinationIds: Array.isArray(updateData.destinationIds)
@@ -677,11 +826,8 @@ module.exports.updateNews = async (req, res) => {
       relatedTourIds: Array.isArray(updateData.relatedTourIds)
         ? updateData.relatedTourIds.filter((id) => id)
         : [],
-
-      // Update tracking info
-
       updatedBy: {
-        _id: req.user?.id, // Assuming user info is in req.user
+        _id: adminId,
         time: new Date(),
       },
     };
@@ -704,15 +850,102 @@ module.exports.updateNews = async (req, res) => {
       .populate("relatedTourIds", "title slug thumbnail")
       .lean();
 
+    console.log("✅ News updated:", updatedNews.title);
+
+    // Track changes
+    const changes = {};
+    const changedFields = [];
+
+    if (oldData.title !== updatedNews.title) {
+      changes.title = { from: oldData.title, to: updatedNews.title };
+      changedFields.push("title");
+    }
+    if (oldData.slug !== updatedNews.slug) {
+      changes.slug = { from: oldData.slug, to: updatedNews.slug };
+      changedFields.push("slug");
+    }
+    if (oldData.status !== updatedNews.status) {
+      changes.status = { from: oldData.status, to: updatedNews.status };
+      changedFields.push("status");
+    }
+    if (oldData.featured !== updatedNews.featured) {
+      changes.featured = { from: oldData.featured, to: updatedNews.featured };
+      changedFields.push("featured");
+    }
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "update",
+        model: "News",
+        recordIds: [updatedNews._id],
+        description: `Cập nhật bài viết: ${updatedNews.title}`,
+        details: {
+          newsId: updatedNews._id,
+          newsTitle: updatedNews.title,
+          newsSlug: updatedNews.slug,
+          changedFields,
+          changes,
+          oldTitle:
+            oldData.title !== updatedNews.title ? oldData.title : undefined,
+          currentStatus: updatedNews.status,
+          updatedFields: Object.keys(updateData),
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "news-management",
+        title: "Bài viết đã được cập nhật",
+        message: `${adminName} đã cập nhật bài viết: ${updatedNews.title}`,
+        data: {
+          newsId: updatedNews._id,
+          newsTitle: updatedNews.title,
+          newsSlug: updatedNews.slug,
+          updatedBy: adminName,
+          updatedAt: new Date().toISOString(),
+          changedFields,
+          oldTitle:
+            oldData.title !== updatedNews.title ? oldData.title : undefined,
+          hasImportantChanges: changedFields.some((field) =>
+            ["status", "featured", "publishedAt"].includes(field)
+          ),
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
     return res.status(200).json({
       success: true,
       message: "Cập nhật tin tức thành công",
       data: updatedNews,
     });
   } catch (error) {
-    console.error("Error in updateNews:", error);
+    console.error("❌ Error in updateNews:", error);
 
-    // Handle validation errors
     if (error.name === "ValidationError") {
       const validationErrors = Object.values(error.errors).map(
         (err) => err.message
@@ -724,7 +957,6 @@ module.exports.updateNews = async (req, res) => {
       });
     }
 
-    // Handle duplicate key errors
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -738,7 +970,6 @@ module.exports.updateNews = async (req, res) => {
     });
   }
 };
-
 // GET /api/v1/admin/news/check-slug/:id - Kiểm tra slug có trùng không
 module.exports.checkSlugAvailability = async (req, res) => {
   try {
@@ -837,9 +1068,13 @@ module.exports.getNewsDetail = async (req, res) => {
 // [PUT] /admin/news/status/:id - Cập nhật trạng thái bài viết
 module.exports.updateNewsStatus = async (req, res) => {
   try {
+    console.log("🔄 updateNewsStatus called - User ID:", req.user?.id);
+
     const { id } = req.params;
     const { status } = req.body;
-    const adminId = req.user?.id; // Giả sử có middleware xác thực
+    const adminId = req.user?.id || req.admin?.adminId;
+    const adminName =
+      req.user?.fullName || req.admin?.fullName || req.admin?.email || "Admin";
 
     if (!["draft", "published", "archived"].includes(status)) {
       return res.status(400).json({
@@ -847,6 +1082,17 @@ module.exports.updateNewsStatus = async (req, res) => {
         message: "Trạng thái không hợp lệ",
       });
     }
+
+    // Lấy thông tin cũ
+    const oldNews = await News.findById(id).lean();
+    if (!oldNews) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy bài viết",
+      });
+    }
+
+    const oldStatus = oldNews.status;
 
     const updateData = {
       status,
@@ -863,11 +1109,76 @@ module.exports.updateNewsStatus = async (req, res) => {
       new: true,
     });
 
-    if (!updatedNews) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy bài viết",
+    console.log(`✅ News status updated: ${oldStatus} → ${status}`);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "update",
+        model: "News",
+        recordIds: [updatedNews._id],
+        description: `Thay đổi trạng thái bài viết: ${updatedNews.title} (${oldStatus} → ${status})`,
+        details: {
+          newsId: updatedNews._id,
+          newsTitle: updatedNews.title,
+          statusChange: {
+            from: oldStatus,
+            to: status,
+          },
+          publishedAt: updatedNews.publishedAt,
+          updateType: "status_change",
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
       });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION (Đặc biệt quan trọng cho status change)
+    try {
+      const statusMessages = {
+        published: "đã xuất bản",
+        draft: "đã chuyển về nháp",
+        archived: "đã lưu trữ",
+      };
+
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "news-management",
+        title: `Bài viết ${statusMessages[status]}`,
+        message: `${adminName} đã ${statusMessages[status]} bài viết: ${updatedNews.title}`,
+        data: {
+          newsId: updatedNews._id,
+          newsTitle: updatedNews.title,
+          statusChange: {
+            from: oldStatus,
+            to: status,
+          },
+          updatedBy: adminName,
+          updatedAt: new Date().toISOString(),
+          publishedAt: updatedNews.publishedAt,
+          isPublished: status === "published",
+          isImportant: true, // Status change là quan trọng
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Status change notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
     }
 
     res.json({
@@ -880,7 +1191,7 @@ module.exports.updateNewsStatus = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error updating news status:", error);
+    console.error("❌ Error updating news status:", error);
     res.status(500).json({
       success: false,
       message: "Lỗi server khi cập nhật trạng thái",
