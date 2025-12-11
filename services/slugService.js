@@ -66,7 +66,7 @@ async function generateExcerpt(context, type = "news", language = "vi") {
   if (!context) return "";
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     const typeNames = {
       vi: {
@@ -127,7 +127,7 @@ async function generateContent(context, type = "news", language = "vi") {
   if (!context) return "";
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     const prompts = {
       vi: `Viết một bài ${
@@ -171,7 +171,7 @@ async function generateMetaTitle(context, type = "news", language = "vi") {
   if (!context) return "";
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     const prompts = {
       vi: `Từ tiêu đề: "${context}", tạo một meta title SEO (tối đa 60 ký tự).
@@ -220,7 +220,7 @@ async function generateMetaDescription(
   if (!context) return "";
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     const prompts = {
       vi: `Từ tiêu đề: "${context}", tạo meta description SEO (tối đa 160 ký tự).
@@ -268,7 +268,7 @@ async function generateTags(context, type = "news", language = "vi") {
   if (!context) return [];
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     const prompts = {
       vi: `Từ tiêu đề: "${context}", tạo 5-8 tags phù hợp cho bài ${type}.
