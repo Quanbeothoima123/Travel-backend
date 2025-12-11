@@ -3,6 +3,9 @@ const buildTree = require("../../../../helpers/buildTree");
 const createSlug = require("../../../../helpers/createSlug");
 const collectDescendants = require("../../../../helpers/collectDescendants");
 const mongoose = require("mongoose");
+const { sendToQueue } = require("../../../../config/rabbitmq");
+const { logBusiness } = require("../../../../services/businessLog.service");
+
 // [GET] /tour-categories
 module.exports.getAllCategories = async (req, res) => {
   try {
@@ -124,10 +127,16 @@ module.exports.getCategoryById = async (req, res) => {
 
 /**
  * POST /api/v1/tour-categories/create
+ * ✅ CÓ LOG + NOTIFICATION
  */
 module.exports.createCategory = async (req, res) => {
   try {
+    console.log("🆕 createCategory called - Admin ID:", req.admin?.adminId);
+
     const { title, parentId, active } = req.body;
+    const adminId = req.admin?.adminId;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
     const slug = createSlug(title);
     const newCategory = new TourCategory({
       title,
@@ -136,24 +145,100 @@ module.exports.createCategory = async (req, res) => {
       active,
     });
     await newCategory.save();
+
+    console.log("✅ Category created:", newCategory.title);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "create",
+        model: "TourCategory",
+        recordIds: [newCategory._id],
+        description: `Tạo danh mục tour: ${newCategory.title}`,
+        details: {
+          categoryId: newCategory._id,
+          categoryTitle: newCategory.title,
+          categorySlug: newCategory.slug,
+          parentId: newCategory.parentId,
+          active: newCategory.active,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "category-management",
+        title: "Danh mục tour mới được tạo",
+        message: `${adminName} đã tạo danh mục: ${newCategory.title}`,
+        data: {
+          categoryId: newCategory._id,
+          categoryTitle: newCategory.title,
+          categorySlug: newCategory.slug,
+          createdBy: adminName,
+          createdAt: newCategory.createdAt,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
     res.status(201).json(newCategory);
   } catch (error) {
-    console.error("createCategory error:", error);
+    console.error("❌ createCategory error:", error);
     res.status(500).json({ message: "Lỗi tạo danh mục", error: error.message });
   }
 };
 
 /**
  * PATCH /api/v1/tour-categories/update/:id
+ * ✅ CÓ LOG + NOTIFICATION
  */
 module.exports.updateCategory = async (req, res) => {
   try {
+    console.log("📝 updateCategory called - Admin ID:", req.admin?.adminId);
+
     const { id } = req.params;
     let { title, parentId, slug, active } = req.body;
+    const adminId = req.admin?.adminId;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID không hợp lệ" });
     }
+
+    // Lấy dữ liệu cũ để so sánh
+    const oldCategory = await TourCategory.findById(id);
+    if (!oldCategory) {
+      return res.status(404).json({ message: "Không tìm thấy danh mục" });
+    }
+
+    const oldData = {
+      title: oldCategory.title,
+      slug: oldCategory.slug,
+      parentId: oldCategory.parentId,
+      active: oldCategory.active,
+    };
 
     // Nếu không nhập slug thì tự sinh từ title
     if (!slug || slug.trim() === "") {
@@ -185,13 +270,84 @@ module.exports.updateCategory = async (req, res) => {
       { new: true }
     );
 
-    if (!updated) {
-      return res.status(404).json({ message: "Không tìm thấy danh mục" });
+    console.log("✅ Category updated:", updated.title);
+
+    // Track changes
+    const changes = {};
+    if (oldData.title !== updated.title) {
+      changes.title = { from: oldData.title, to: updated.title };
+    }
+    if (oldData.slug !== updated.slug) {
+      changes.slug = { from: oldData.slug, to: updated.slug };
+    }
+    if (String(oldData.parentId) !== String(updated.parentId)) {
+      changes.parentId = { from: oldData.parentId, to: updated.parentId };
+    }
+    if (oldData.active !== updated.active) {
+      changes.active = { from: oldData.active, to: updated.active };
+    }
+
+    const changedFields = Object.keys(changes);
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "update",
+        model: "TourCategory",
+        recordIds: [updated._id],
+        description: `Cập nhật danh mục tour: ${updated.title}`,
+        details: {
+          categoryId: updated._id,
+          categoryTitle: updated.title,
+          changedFields,
+          changes,
+          oldTitle: oldData.title !== updated.title ? oldData.title : undefined,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "category-management",
+        title: "Danh mục tour đã được cập nhật",
+        message: `${adminName} đã cập nhật danh mục: ${updated.title}`,
+        data: {
+          categoryId: updated._id,
+          categoryTitle: updated.title,
+          updatedBy: adminName,
+          updatedAt: updated.updatedAt,
+          changedFields,
+          oldTitle: oldData.title !== updated.title ? oldData.title : undefined,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
     }
 
     res.json(updated);
   } catch (error) {
-    console.error("updateCategory error:", error);
+    console.error("❌ updateCategory error:", error);
     res.status(500).json({
       message: "Lỗi cập nhật danh mục",
       error: error.message,
@@ -239,13 +395,20 @@ module.exports.getDeleteCategoryInfo = async (req, res) => {
 /**
  * DELETE /api/v1/tours-categories/delete/:id
  * Thực hiện soft delete danh mục và con cháu
+ * ✅ CÓ LOG + NOTIFICATION
  */
 module.exports.deleteCategory = async (req, res) => {
   try {
+    console.log("🗑️ deleteCategory called - Admin ID:", req.admin?.adminId);
+
     const { id } = req.params;
+    const adminId = req.admin?.adminId;
+    const adminName = req.admin?.fullName || req.admin?.email || "System";
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID không hợp lệ" });
     }
+
     // Không cho xóa danh mục du lịch cha
     if (id === "68a1ae783856445e14a6aff2") {
       return res
@@ -269,13 +432,75 @@ module.exports.deleteCategory = async (req, res) => {
       { $set: { deleted: true, deletedAt: new Date() } }
     );
 
+    console.log(
+      `✅ Deleted ${deleteIds.length} categories (including descendants)`
+    );
+
+    // 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId: adminId || null,
+        adminName,
+        action: "delete",
+        model: "TourCategory",
+        recordIds: deleteIds,
+        description: `Xóa danh mục tour: ${category.title} (bao gồm ${deleteIds.length} danh mục con)`,
+        details: {
+          categoryId: id,
+          categoryTitle: category.title,
+          affectedCount: deleteIds.length,
+          deleteIds,
+          deletedAt: new Date(),
+          deletionType: "soft_delete_cascade", // Xóa cascade cả con cháu
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 🐰 GỬI NOTIFICATION
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "category-management",
+        title: "Danh mục tour đã bị xóa",
+        message: `${adminName} đã xóa danh mục: ${category.title} (${deleteIds.length} danh mục bị ảnh hưởng)`,
+        data: {
+          categoryId: id,
+          categoryTitle: category.title,
+          affectedCount: deleteIds.length,
+          deletedBy: adminName,
+          deletedAt: new Date().toISOString(),
+          canRestore: true,
+          isCascade: deleteIds.length > 1, // Có xóa con cháu không
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+      if (sent) {
+        console.log("✅ Delete notification sent to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ error:", queueError.message);
+    }
+
     res.json({
       success: true,
       categoryTitle: category.title,
       affectedCount: deleteIds.length,
     });
   } catch (error) {
-    console.error("Xóa danh mục du lịch không thành công:", error);
+    console.error("❌ Xóa danh mục du lịch không thành công:", error);
     res.status(500).json({
       success: false,
       message: "Lỗi xóa danh mục",
@@ -291,7 +516,7 @@ module.exports.deleteCategory = async (req, res) => {
 module.exports.getLatestUpdatedCategory = async (req, res) => {
   try {
     const latestCategory = await TourCategory.findOne({ deleted: false })
-      .sort({ updatedAt: -1 }) // sắp xếp giảm dần theo updatedAt
+      .sort({ updatedAt: -1 })
       .select("_id title updatedAt");
 
     if (!latestCategory) {
@@ -316,6 +541,7 @@ module.exports.getLatestUpdatedCategory = async (req, res) => {
     });
   }
 };
+
 /**
  * GET /api/v1/admin/news-category/latest-created
  * Lấy ID của danh mục được tạo mới nhất
@@ -323,7 +549,7 @@ module.exports.getLatestUpdatedCategory = async (req, res) => {
 module.exports.getLatestCreatedCategory = async (req, res) => {
   try {
     const latestCategory = await TourCategory.findOne({ deleted: false })
-      .sort({ createdAt: -1 }) // sắp xếp giảm dần theo createdAt
+      .sort({ createdAt: -1 })
       .select("_id title createdAt");
 
     if (!latestCategory) {
