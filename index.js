@@ -92,23 +92,23 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-// ✅ TEST RABBITMQ SAU 5 GIÂY
-setTimeout(async () => {
-  console.log("\n Testing RabbitMQ...");
-  const { sendToQueue } = require("./config/rabbitmq");
+// // ✅ TEST RABBITMQ SAU 5 GIÂY
+// setTimeout(async () => {
+//   console.log("\n Testing RabbitMQ...");
+//   const { sendToQueue } = require("./config/rabbitmq");
 
-  const testMessage = {
-    id: "test-123",
-    type: "admin-action",
-    title: "Test notification",
-    message: "This is a test",
-    unread: true,
-    timestamp: new Date().toISOString(),
-    time: "Vừa xong",
-  };
+//   const testMessage = {
+//     id: "test-123",
+//     type: "admin-action",
+//     title: "Test notification",
+//     message: "This is a test",
+//     unread: true,
+//     timestamp: new Date().toISOString(),
+//     time: "Vừa xong",
+//   };
 
-  await sendToQueue("notifications.admin", testMessage);
-  console.log(" Test message sent!\n");
-}, 5000);
+//   await sendToQueue("notifications.admin", testMessage);
+//   console.log(" Test message sent!\n");
+// }, 5000);
 
 module.exports = { app, server, io };
