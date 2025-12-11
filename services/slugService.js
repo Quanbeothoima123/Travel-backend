@@ -15,7 +15,7 @@ async function generateSlug(title) {
 
   try {
     // Sử dụng model 'gemini-1.5-flash' để có tốc độ nhanh và hiệu quả
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     // Prompt yêu cầu AI tạo ra một slug chuẩn SEO với các quy tắc rõ ràng
     const prompt = `Từ tiêu đề sau: "${title}", hãy tạo một chuỗi slug duy nhất, thân thiện với URL cho mục đích SEO.
