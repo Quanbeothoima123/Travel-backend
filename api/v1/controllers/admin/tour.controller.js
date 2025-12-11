@@ -522,10 +522,9 @@ module.exports.updateTour = async (req, res) => {
 module.exports.createTour = async (req, res) => {
   try {
     const adminId = req.admin.adminId;
-    // Dữ liệu body từ frontend
+    const adminName = req.admin.fullName || req.admin.email;
     const body = req.body;
 
-    // Gán thêm createdBy
     const tourData = {
       ...body,
       createdBy: {
@@ -534,41 +533,91 @@ module.exports.createTour = async (req, res) => {
       },
     };
 
-    // Tạo tour mới
+    //  Tạo tour mới
     const newTour = new Tour(tourData);
     await newTour.save();
+
+    console.log("✅ Tour created successfully:", newTour.title);
+
+    //  GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "create",
+        model: "Tour",
+        recordIds: [newTour._id],
+        description: `Tạo mới tour: ${newTour.title}`,
+        details: {
+          tourId: newTour._id,
+          tourTitle: newTour.title,
+          tourSlug: newTour.slug,
+          tourCode: newTour.code,
+          price: newTour.prices,
+          status: newTour.status,
+          featured: newTour.featured,
+          createdData: body, // Lưu toàn bộ data được tạo
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log(" Business log recorded successfully");
+    } catch (logError) {
+      console.error(" Error logging business:", logError.message);
+      // Không throw error, chỉ log để không ảnh hưởng flow chính
+    }
+
     //  GỬI NOTIFICATION CHO ADMIN KHÁC
-    const notificationMessage = {
-      id: Date.now().toString(),
-      type: "admin-action", // Phân biệt admin action
-      category: "tour-management",
-      title: "Tour mới được tạo",
-      message: `Admin ${req.admin.fullName} đã tạo tour: ${newTour.title}`,
-      data: {
-        tourId: newTour._id,
-        tourTitle: newTour.title,
-        createdBy: req.admin.fullName,
-        createdAt: newTour.createdAt,
-      },
-      unread: true,
-      timestamp: new Date().toISOString(),
-      time: "Vừa xong",
-    };
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "tour-management",
+        title: "Tour mới được tạo",
+        message: `${adminName} đã tạo tour: ${newTour.title}`,
+        data: {
+          tourId: newTour._id,
+          tourTitle: newTour.title,
+          tourSlug: newTour.slug,
+          tourCode: newTour.code,
+          price: newTour.price,
+          createdBy: adminName,
+          createdAt: newTour.createdAt,
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
 
-    // Gửi vào queue notifications.admin
-    await sendToQueue("notifications.admin", notificationMessage);
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
 
+      if (sent) {
+        console.log("✅ Notification sent to RabbitMQ successfully");
+      } else {
+        console.warn("⚠️ Failed to send notification to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ sendToQueue error:", queueError.message);
+      // Không throw error, chỉ log để không ảnh hưởng flow chính
+    }
+
+    // 5️⃣ ✅ RESPONSE
     return res.status(201).json({
       success: true,
       message: "Tạo tour thành công",
       tour: newTour,
     });
   } catch (err) {
-    console.error("Lỗi khi tạo tour:", err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ Error in createTour:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message || "Server error",
+    });
   }
 };
-
 /**
  * POST /api/v1/tours/check-info-tour-create
  */
