@@ -230,7 +230,7 @@ module.exports.bulkUpdateTours = async (req, res) => {
   try {
     const { ids, set, positions } = req.body;
     const adminId = req.admin.adminId;
-    const adminName = req.admin.fullName || req.admin.email; // Lấy tên admin
+    const adminName = req.admin.fullName || req.admin.email;
 
     if (!ids || ids.length === 0) {
       return res.status(400).json({
@@ -239,8 +239,11 @@ module.exports.bulkUpdateTours = async (req, res) => {
       });
     }
 
+    let updatedCount = 0;
+    let updateDetails = {};
+
     // ========================================
-    //  Nếu có positions → update từng tour
+    // ✅ Nếu có positions → update từng tour
     // ========================================
     if (Array.isArray(positions) && positions.length > 0) {
       for (const p of positions) {
@@ -261,30 +264,68 @@ module.exports.bulkUpdateTours = async (req, res) => {
         });
       }
 
-      //  GHI LOG
+      updatedCount = positions.length;
+      updateDetails = { positions, set };
+
+      // 📝 GHI LOG
       await logBusiness({
         adminId,
         adminName,
         action: "bulk_update",
         model: "Tour",
-        recordIds: ids, // ✅ ĐÃ SỬA: dùng ids thay vì positions.map((p) => p.id)
+        recordIds: ids,
         description: `Cập nhật ${ids.length} tour với vị trí`,
         details: { positions, set },
         ip: req.ip,
         userAgent: req.get("User-Agent"),
       });
 
+      // 🐰 GỬI NOTIFICATION VÀO RABBITMQ
+      try {
+        const notificationMessage = {
+          id: Date.now().toString(),
+          type: "admin-action",
+          category: "tour-management",
+          title: "Cập nhật hàng loạt tour (có vị trí)",
+          message: `${adminName} đã cập nhật ${updatedCount} tour với vị trí mới`,
+          data: {
+            updatedCount,
+            tourIds: ids,
+            updatedBy: adminName,
+            updatedAt: new Date().toISOString(),
+            hasPositions: true,
+            changes: positions.map((p) => ({
+              tourId: p.id,
+              position: p.position,
+            })),
+          },
+          unread: true,
+          timestamp: new Date().toISOString(),
+          time: "Vừa xong",
+        };
+
+        const sent = await sendToQueue(
+          "notifications.admin",
+          notificationMessage
+        );
+        if (sent) {
+          console.log("✅ Bulk update notification sent to RabbitMQ");
+        }
+      } catch (queueError) {
+        console.error("❌ RabbitMQ error:", queueError.message);
+      }
+
       return res.json({
         success: true,
-        message: `Đã cập nhật ${positions.length} sản phẩm (có vị trí).`,
+        message: `Đã cập nhật ${positions.length} tour (có vị trí).`,
       });
     }
 
     // ========================================
-    //  Nếu chỉ có set → updateMany
+    // ✅ Nếu chỉ có set → updateMany
     // ========================================
     if (set && Object.keys(set).length > 0) {
-      await Tour.updateMany(
+      const result = await Tour.updateMany(
         { _id: { $in: ids } },
         {
           $set: set,
@@ -297,31 +338,70 @@ module.exports.bulkUpdateTours = async (req, res) => {
         }
       );
 
-      //  GHI LOG
+      updatedCount = result.modifiedCount || ids.length;
+      updateDetails = { set };
+
+      // 📝 GHI LOG
       await logBusiness({
         adminId,
         adminName,
         action: "bulk_update",
         model: "Tour",
-        recordIds: ids, // ✅ Đã đúng rồi
+        recordIds: ids,
         description: `Cập nhật hàng loạt ${ids.length} tour`,
         details: { set },
         ip: req.ip,
         userAgent: req.get("User-Agent"),
       });
 
+      // 🐰 GỬI NOTIFICATION VÀO RABBITMQ
+      try {
+        const notificationMessage = {
+          id: Date.now().toString(),
+          type: "admin-action",
+          category: "tour-management",
+          title: "Cập nhật hàng loạt tour",
+          message: `${adminName} đã cập nhật ${updatedCount} tour`,
+          data: {
+            updatedCount,
+            tourIds: ids,
+            updatedBy: adminName,
+            updatedAt: new Date().toISOString(),
+            hasPositions: false,
+            changes: Object.keys(set),
+            updatedFields: set,
+          },
+          unread: true,
+          timestamp: new Date().toISOString(),
+          time: "Vừa xong",
+        };
+
+        const sent = await sendToQueue(
+          "notifications.admin",
+          notificationMessage
+        );
+        if (sent) {
+          console.log("✅ Bulk update notification sent to RabbitMQ");
+        }
+      } catch (queueError) {
+        console.error("❌ RabbitMQ error:", queueError.message);
+      }
+
       return res.json({
         success: true,
-        message: `Đã cập nhật ${ids.length} sản phẩm.`,
+        message: `Đã cập nhật ${ids.length} tour.`,
       });
     }
 
+    // ========================================
+    // ❌ Không có dữ liệu để cập nhật
     // ========================================
     return res.status(400).json({
       success: false,
       message: "Không có dữ liệu để cập nhật",
     });
   } catch (err) {
+    console.error("❌ Error in bulkUpdateTours:", err);
     res.status(500).json({
       success: false,
       message: err.message,
