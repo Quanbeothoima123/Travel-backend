@@ -13,6 +13,7 @@ const { generateTagsAI } = require("../../../../services/tagService");
 const { generateSlug } = require("../../../../services/slugService");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 const { sendToQueue } = require("../../../../config/rabbitmq");
+const { logBusiness } = require("../../../../services/businessLog.service");
 module.exports.getTours = async (req, res) => {
   try {
     const {
@@ -229,6 +230,7 @@ module.exports.bulkUpdateTours = async (req, res) => {
   try {
     const { ids, set, positions } = req.body;
     const adminId = req.admin.adminId;
+    const adminName = req.admin.fullName || req.admin.email; // Lấy tên admin
 
     if (!ids || ids.length === 0) {
       return res.status(400).json({
@@ -259,6 +261,19 @@ module.exports.bulkUpdateTours = async (req, res) => {
         });
       }
 
+      //  GHI LOG
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "bulk_update",
+        model: "Tour",
+        recordIds: ids, // ✅ ĐÃ SỬA: dùng ids thay vì positions.map((p) => p.id)
+        description: `Cập nhật ${ids.length} tour với vị trí`,
+        details: { positions, set },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+
       return res.json({
         success: true,
         message: `Đã cập nhật ${positions.length} sản phẩm (có vị trí).`,
@@ -281,6 +296,19 @@ module.exports.bulkUpdateTours = async (req, res) => {
           },
         }
       );
+
+      //  GHI LOG
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "bulk_update",
+        model: "Tour",
+        recordIds: ids, // ✅ Đã đúng rồi
+        description: `Cập nhật hàng loạt ${ids.length} tour`,
+        details: { set },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
 
       return res.json({
         success: true,
