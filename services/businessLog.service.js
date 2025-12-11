@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const BusinessLog = require("../../api/v1/models/business-log.model");
+const BusinessLog = require("../api/v1/models/business-log.model");
 
 // Đường dẫn file log JSON
 const LOG_DIR = path.join(__dirname, "../logs");
