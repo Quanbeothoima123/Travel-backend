@@ -3,8 +3,8 @@ const slugify = require("slugify");
 
 const GallerySchema = new mongoose.Schema(
   {
-    title: { type: String, required: true }, // tiêu đề của gallery
-    slug: { type: String, required: true, unique: true }, // slug sẽ được tự động sinh
+    title: { type: String, required: true },
+    slug: { type: String, required: true, unique: true },
     shortDescription: { type: String },
     longDescription: { type: String },
     thumbnail: { type: String, required: true },
@@ -49,16 +49,49 @@ const GallerySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// 🔥 Auto tạo slug trước khi save
-GallerySchema.pre("save", function (next) {
-  if (this.isModified("title") || this.isNew) {
-    this.slug = slugify(this.title, {
-      lower: true,
-      strict: true, // loại bỏ ký tự đặc biệt
-    });
+//  Auto tạo slug trước khi validate (FIX LỖI)
+GallerySchema.pre("validate", async function (next) {
+  try {
+    if (this.isModified("title") || this.isNew) {
+      // Tạo slug cơ bản từ title
+      let baseSlug = slugify(this.title, {
+        lower: true,
+        strict: true,
+        locale: "vi", // Hỗ trợ tiếng Việt tốt hơn
+        remove: /[*+~.()'"!:@]/g, // Loại bỏ ký tự đặc biệt
+      });
+
+      // Xử lý trường hợp slug trùng bằng cách thêm số phía sau
+      let slug = baseSlug;
+      let counter = 1;
+
+      // Kiểm tra slug đã tồn tại chưa (trừ chính document này nếu đang update)
+      while (
+        await this.constructor.findOne({
+          slug,
+          _id: { $ne: this._id },
+          deleted: false,
+        })
+      ) {
+        slug = `${baseSlug}-${counter}`;
+        counter++;
+      }
+
+      this.slug = slug;
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
-  next();
 });
+
+// Index để tăng performance khi query
+GallerySchema.index({ slug: 1 });
+GallerySchema.index({ galleryCategory: 1, deleted: 1 });
+GallerySchema.index({ tour: 1, deleted: 1 });
+GallerySchema.index({ tourCategory: 1, deleted: 1 });
+GallerySchema.index({ deleted: 1, active: 1 });
+GallerySchema.index({ createdAt: -1 });
 
 const Gallery = mongoose.model("Gallery", GallerySchema, "gallery");
 module.exports = Gallery;
