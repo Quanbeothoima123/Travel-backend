@@ -332,9 +332,10 @@ module.exports.bulkUpdateTours = async (req, res) => {
 // Update 1 Tour
 module.exports.updateTour = async (req, res) => {
   try {
-    console.log(" updateTour called - Admin ID:", req.admin.adminId);
+    console.log("📝 updateTour called - Admin ID:", req.admin.adminId);
 
     const adminId = req.admin.adminId;
+    const adminName = req.admin.fullName || req.admin.email;
     const { id } = req.params;
 
     // 1. Update tour
@@ -353,28 +354,50 @@ module.exports.updateTour = async (req, res) => {
     );
 
     if (!updated) {
-      console.error(" Tour not found:", id);
+      console.error("❌ Tour not found:", id);
       return res.status(404).json({
         success: false,
         message: "Không tìm thấy tour này!",
       });
     }
 
-    console.log(" Tour updated:", updated.title);
+    console.log("✅ Tour updated:", updated.title);
 
-    // 3.  Tạo notification message
+    // 2. 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "update",
+        model: "Tour",
+        recordIds: [updated._id],
+        description: `Cập nhật tour: ${updated.title}`,
+        details: {
+          tourId: updated._id,
+          tourTitle: updated.title,
+          changes: Object.keys(req.body),
+          updatedFields: req.body,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded successfully");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+      // Không throw error, chỉ log ra để không ảnh hưởng flow chính
+    }
+
+    // 3. 📨 TẠO NOTIFICATION MESSAGE
     const notificationMessage = {
       id: Date.now().toString(),
       type: "admin-action",
       category: "tour-management",
       title: "Tour đã được cập nhật",
-      message: `${req.admin?.fullName || "Admin"} đã cập nhật tour: ${
-        updated.title
-      }`,
+      message: `${adminName} đã cập nhật tour: ${updated.title}`,
       data: {
         tourId: updated._id,
         tourTitle: updated.title,
-        updatedBy: req.admin?.fullName || "Admin",
+        updatedBy: adminName,
         updatedAt: new Date().toISOString(),
         changes: Object.keys(req.body),
       },
@@ -383,38 +406,36 @@ module.exports.updateTour = async (req, res) => {
       time: "Vừa xong",
     };
 
-    console.log(" Preparing to send notification:", notificationMessage.title);
-
-    // 4.  Gửi vào queue notifications.admin
+    // 4. 🐰 GỬI VÀO QUEUE notifications.admin
     try {
       const sent = await sendToQueue(
         "notifications.admin",
         notificationMessage
       );
       if (sent) {
-        console.log(" Notification sent to RabbitMQ successfully");
+        console.log("✅ Notification sent to RabbitMQ successfully");
       } else {
-        console.error(" Failed to send notification to RabbitMQ");
+        console.error("⚠️ Failed to send notification to RabbitMQ");
       }
     } catch (queueError) {
-      console.error(" RabbitMQ sendToQueue error:", queueError);
+      console.error("❌ RabbitMQ sendToQueue error:", queueError.message);
+      // Không throw error, chỉ log ra
     }
 
-    // 5. Response
+    // 5. ✅ RESPONSE
     res.json({
       success: true,
       message: "Cập nhật tour thành công",
       data: updated,
     });
   } catch (err) {
-    console.error(" Error in updateTour:", err);
+    console.error("❌ Error in updateTour:", err);
     res.status(500).json({
       success: false,
       message: err.message,
     });
   }
 };
-
 /**
  * POST /api/v1/tours/create
  */
