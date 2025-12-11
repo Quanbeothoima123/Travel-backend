@@ -7,7 +7,7 @@ const BusinessLogSchema = new mongoose.Schema(
       ref: "AdminAccount",
       required: true,
     },
-    adminName: { type: String }, // Lưu luôn tên cho tiện tra cứu
+    adminName: { type: String },
 
     action: {
       type: String,
@@ -27,27 +27,21 @@ const BusinessLogSchema = new mongoose.Schema(
         "Hotel",
         "Province",
         "Vehicle",
-        // Thêm các model khác trong tương lai
       ],
       required: true,
     },
 
-    recordIds: [{ type: mongoose.Schema.Types.ObjectId }], // IDs của các bản ghi bị ảnh hưởng
-
-    description: { type: String }, // Mô tả ngắn gọn
-
-    details: { type: mongoose.Schema.Mixed }, // Chi tiết thay đổi (optional)
-
-    ip: { type: String }, // IP của admin (optional)
-
-    userAgent: { type: String }, // Trình duyệt (optional)
+    recordIds: [{ type: mongoose.Schema.Types.ObjectId }],
+    description: { type: String },
+    details: mongoose.Schema.Types.Mixed, // ✅ ĐÃ SỬA
+    ip: { type: String },
+    userAgent: { type: String },
   },
   {
-    timestamps: true, // Tự động thêm createdAt, updatedAt
+    timestamps: true,
   }
 );
 
-// Index để query nhanh
 BusinessLogSchema.index({ adminId: 1, createdAt: -1 });
 BusinessLogSchema.index({ model: 1, action: 1 });
 BusinessLogSchema.index({ recordIds: 1 });
