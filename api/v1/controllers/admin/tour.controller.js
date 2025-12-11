@@ -495,7 +495,7 @@ module.exports.updateTour = async (req, res) => {
       if (sent) {
         console.log("✅ Notification sent to RabbitMQ successfully");
       } else {
-        console.error("⚠️ Failed to send notification to RabbitMQ");
+        console.error(" Failed to send notification to RabbitMQ");
       }
     } catch (queueError) {
       console.error("❌ RabbitMQ sendToQueue error:", queueError.message);
@@ -536,8 +536,6 @@ module.exports.createTour = async (req, res) => {
     //  Tạo tour mới
     const newTour = new Tour(tourData);
     await newTour.save();
-
-    console.log("✅ Tour created successfully:", newTour.title);
 
     //  GHI LOG BUSINESS
     try {
@@ -597,7 +595,7 @@ module.exports.createTour = async (req, res) => {
       if (sent) {
         console.log("✅ Notification sent to RabbitMQ successfully");
       } else {
-        console.warn("⚠️ Failed to send notification to RabbitMQ");
+        console.warn(" Failed to send notification to RabbitMQ");
       }
     } catch (queueError) {
       console.error("❌ RabbitMQ sendToQueue error:", queueError.message);
@@ -1107,22 +1105,40 @@ module.exports.getTourById = async (req, res) => {
  */
 module.exports.delete = async (req, res) => {
   try {
-    // Lấy token từ cookie
     const adminId = req.admin.adminId;
+    const adminName = req.admin.fullName || req.admin.email;
     const tourId = req.params.tourId;
 
-    // Tìm tour
+    // 1️⃣ Tìm tour
     const tour = await Tour.findById(tourId);
     if (!tour) {
-      return res.status(404).json({ message: "Tour không tồn tại" });
+      console.error("❌ Tour not found:", tourId);
+      return res.status(404).json({
+        success: false,
+        message: "Tour không tồn tại",
+      });
     }
 
-    // Nếu tour đã bị xóa trước đó
+    // 2️⃣ Kiểm tra tour đã bị xóa trước đó
     if (tour.deleted) {
-      return res.status(400).json({ message: "Tour đã bị xóa trước đó" });
+      console.warn(" Tour already deleted:", tourId);
+      return res.status(400).json({
+        success: false,
+        message: "Tour đã bị xóa trước đó",
+      });
     }
 
-    // Cập nhật thông tin xóa
+    // Lưu thông tin tour trước khi xóa (để log)
+    const tourInfo = {
+      id: tour._id,
+      title: tour.title,
+      slug: tour.slug,
+      code: tour.code,
+      status: tour.status,
+      price: tour.price,
+    };
+
+    // 3️⃣ Cập nhật thông tin xóa (Soft Delete)
     tour.deleted = true;
     tour.deletedBy = {
       _id: adminId,
@@ -1131,14 +1147,81 @@ module.exports.delete = async (req, res) => {
 
     await tour.save();
 
+    // 4️⃣ 📝 GHI LOG BUSINESS
+    try {
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "delete",
+        model: "Tour",
+        recordIds: [tour._id],
+        description: `Xóa tour: ${tourInfo.title}`,
+        details: {
+          tourId: tour._id,
+          tourTitle: tourInfo.title,
+          tourSlug: tourInfo.slug,
+          tourCode: tourInfo.code,
+          previousStatus: tourInfo.status,
+          price: tourInfo.price,
+          deletedAt: tour.deletedBy.at,
+          deletionType: "soft_delete", // Phân biệt soft/hard delete
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded successfully");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+    }
+
+    // 5️⃣ 🐰 GỬI NOTIFICATION CHO ADMIN KHÁC
+    try {
+      const notificationMessage = {
+        id: Date.now().toString(),
+        type: "admin-action",
+        category: "tour-management",
+        title: "Tour đã bị xóa",
+        message: `${adminName} đã xóa tour: ${tourInfo.title}`,
+        data: {
+          tourId: tour._id,
+          tourTitle: tourInfo.title,
+          tourSlug: tourInfo.slug,
+          tourCode: tourInfo.code,
+          deletedBy: adminName,
+          deletedAt: tour.deletedBy.at,
+          canRestore: true, // Có thể khôi phục vì là soft delete
+        },
+        unread: true,
+        timestamp: new Date().toISOString(),
+        time: "Vừa xong",
+      };
+
+      const sent = await sendToQueue(
+        "notifications.admin",
+        notificationMessage
+      );
+
+      if (sent) {
+        console.log("✅ Delete notification sent to RabbitMQ successfully");
+      } else {
+        console.warn(" Failed to send notification to RabbitMQ");
+      }
+    } catch (queueError) {
+      console.error("❌ RabbitMQ sendToQueue error:", queueError.message);
+    }
+
+    // 6️⃣ ✅ RESPONSE
     return res.status(200).json({
       success: true,
       message: "Xóa tour thành công",
       tour,
     });
   } catch (error) {
-    console.error("Lỗi khi xóa tour:", error);
-    return res.status(500).json({ message: "Server error" });
+    console.error("❌ Error in deleteTour:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
 };
 
@@ -1148,26 +1231,37 @@ module.exports.delete = async (req, res) => {
 
 module.exports.editTour = async (req, res) => {
   try {
-    console.log("🔍 editTour called - Admin ID:", req.admin.adminId);
-
     // === 1. Lấy adminId từ middleware ===
     const adminId = req.admin.adminId;
+    const adminName = req.admin.fullName || req.admin.email;
     const { tourId } = req.params;
 
     // === 2. Tìm tour ===
     const tour = await Tour.findById(tourId);
     if (!tour) {
-      console.error(" Tour not found:", tourId);
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy tour" });
+      console.error("❌ Tour not found:", tourId);
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy tour",
+      });
     }
 
-    console.log(" Tour found:", tour.title);
+    console.log("✅ Tour found:", tour.title);
 
-    // === 3. Lưu thông tin cũ để so sánh (optional - để biết thay đổi gì)
-    const oldTitle = tour.title;
+    // === 3. Lưu thông tin cũ để so sánh và log ===
+    const oldData = {
+      title: tour.title,
+      slug: tour.slug,
+      status: tour.active,
+      position: tour.position,
+      categoryId: tour.categoryId,
+      prices: tour.prices,
+      discount: tour.discount,
+      seats: tour.seats,
+    };
+
     const changedFields = [];
+    const detailedChanges = {}; // Lưu chi tiết thay đổi
 
     // === 4. Cập nhật từng trường nếu có trong body ===
     const fields = [
@@ -1198,16 +1292,23 @@ module.exports.editTour = async (req, res) => {
 
     fields.forEach((field) => {
       if (req.body[field] !== undefined) {
-        //  Track changed fields
-        if (JSON.stringify(tour[field]) !== JSON.stringify(req.body[field])) {
+        const oldValue = tour[field];
+        const newValue = req.body[field];
+
+        // ✅ Track changed fields với chi tiết
+        if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
           changedFields.push(field);
+          detailedChanges[field] = {
+            from: oldValue,
+            to: newValue,
+          };
         }
-        tour[field] = req.body[field];
+        tour[field] = newValue;
       }
     });
 
     console.log(
-      " Changed fields:",
+      "📝 Changed fields:",
       changedFields.length > 0 ? changedFields : "none"
     );
 
@@ -1219,26 +1320,59 @@ module.exports.editTour = async (req, res) => {
 
     // === 6. Lưu lại ===
     await tour.save();
-    console.log(" Tour saved:", tour.title);
+    console.log("✅ Tour saved:", tour.title);
 
-    // === 7.  GỬI NOTIFICATION VÀO RABBITMQ ===
+    // === 7. 📝 GHI LOG BUSINESS ===
+    try {
+      await logBusiness({
+        adminId,
+        adminName,
+        action: "update",
+        model: "Tour",
+        recordIds: [tour._id],
+        description: `Chỉnh sửa tour: ${tour.title}`,
+        details: {
+          tourId: tour._id,
+          tourTitle: tour.title,
+          tourSlug: tour.slug,
+          changedFields,
+          changes: detailedChanges, // Chi tiết từng thay đổi (before/after)
+          oldTitle: oldData.title !== tour.title ? oldData.title : undefined,
+          totalChanges: changedFields.length,
+          // Thêm thông tin quan trọng khác
+          currentStatus: tour.active,
+          currentPosition: tour.position,
+          currentPrice: tour.prices,
+        },
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      console.log("✅ Business log recorded successfully");
+    } catch (logError) {
+      console.error("❌ Error logging business:", logError.message);
+      // Không fail request nếu log lỗi
+    }
+
+    // === 8. 🐰 GỬI NOTIFICATION VÀO RABBITMQ ===
     try {
       const notificationMessage = {
         id: Date.now().toString(),
         type: "admin-action",
         category: "tour-management",
         title: "Tour đã được cập nhật",
-        message: `${req.admin?.fullName || "Admin"} đã cập nhật tour: ${
-          tour.title
-        }`,
+        message: `${adminName} đã cập nhật tour: ${tour.title}`,
         data: {
           tourId: tour._id,
           tourTitle: tour.title,
-          updatedBy: req.admin?.fullName || "Admin",
+          tourSlug: tour.slug,
+          updatedBy: adminName,
           updatedAt: new Date().toISOString(),
-          changes:
-            changedFields.length > 0 ? changedFields : ["general update"],
-          oldTitle: oldTitle !== tour.title ? oldTitle : undefined,
+          changedFields,
+          totalChanges: changedFields.length,
+          oldTitle: oldData.title !== tour.title ? oldData.title : undefined,
+          hasImportantChanges: changedFields.some((field) =>
+            ["title", "prices", "active", "seats"].includes(field)
+          ),
         },
         unread: true,
         timestamp: new Date().toISOString(),
@@ -1246,7 +1380,7 @@ module.exports.editTour = async (req, res) => {
       };
 
       console.log(
-        " Preparing to send notification:",
+        "📨 Preparing to send notification:",
         notificationMessage.title
       );
 
@@ -1256,23 +1390,27 @@ module.exports.editTour = async (req, res) => {
       );
 
       if (sent) {
-        console.log(" Notification sent to RabbitMQ successfully");
+        console.log("✅ Notification sent to RabbitMQ successfully");
       } else {
-        console.error(" Failed to send notification to RabbitMQ");
+        console.warn("⚠️ Failed to send notification to RabbitMQ");
       }
     } catch (queueError) {
-      //  Không fail request nếu notification lỗi
-      console.error(" RabbitMQ notification error:", queueError);
+      console.error("❌ RabbitMQ notification error:", queueError.message);
+      // Không fail request nếu notification lỗi
     }
 
-    // === 8. Response ===
+    // === 9. ✅ RESPONSE ===
     return res.status(200).json({
       success: true,
       message: "Cập nhật tour thành công",
       tour,
+      changedFields, // Trả về danh sách fields đã thay đổi
     });
   } catch (err) {
-    console.error(" Error in editTour:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("❌ Error in editTour:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message || "Server error",
+    });
   }
 };
