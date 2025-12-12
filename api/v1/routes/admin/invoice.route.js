@@ -1,28 +1,53 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/admin/invoice.controller");
+const { checkRole } = require("../../../../middlewares/admin/authAdmin");
 // GET: Lấy danh sách invoice với filter + pagination
-router.get("/", controller.index);
+router.get("/", checkRole(["super-admin", "manager"]), controller.index);
 
 // GET: Lấy chi tiết một invoice
-router.get("/:id", controller.detail);
+router.get("/:id", checkRole(["super-admin", "manager"]), controller.detail);
 
 // POST: Tạo invoice mới (admin tạo cho khách)
-router.post("/create", controller.create);
+router.post(
+  "/create",
+  checkRole(["super-admin", "manager"]),
+  controller.create
+);
 
 // PATCH: Cập nhật trạng thái thanh toán
-router.patch("/update-status/:id", controller.updateStatus);
+router.patch(
+  "/update-status/:id",
+  checkRole(["super-admin", "manager"]),
+  controller.updateStatus
+);
 
 // PATCH: Cập nhật trạng thái tour
-router.patch("/update-tour-status/:id", controller.updateTourStatus);
+router.patch(
+  "/update-tour-status/:id",
+  checkRole(["super-admin", "manager"]),
+  controller.updateTourStatus
+);
 
 // DELETE: Hủy booking
-router.delete("/cancel/:id", controller.cancel);
+router.delete(
+  "/cancel/:id",
+  checkRole(["super-admin", "manager"]),
+  controller.cancel
+);
 
 // GET: Thống kê tổng quan
-router.get("/statistics", controller.statistics);
+router.get(
+  "/statistics",
+  checkRole(["super-admin", "manager"]),
+  controller.statistics
+);
 
 // GET: Xuất dữ liệu
-router.get("/export", controller.exportData);
+router.get(
+  "/export",
+  checkRole(["super-admin", "manager"]),
+  controller.exportData
+);
 
 module.exports = router;
