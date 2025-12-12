@@ -1,14 +1,23 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/admin/admin-account.controller");
+const { checkRole } = require("../../../../middlewares/admin/authAdmin");
 // CRUD routes
-router.get("/", controller.index);
-router.post("/create", controller.create);
-router.get("/detail/:id", controller.detail);
-router.patch("/update/:id", controller.update);
-router.delete("/delete/:id", controller.delete);
+router.get("/", checkRole(["super-admin"]), controller.index);
+router.post("/create", checkRole(["super-admin"]), controller.create);
+router.get("/detail/:id", checkRole(["super-admin"]), controller.detail);
+router.patch("/update/:id", checkRole(["super-admin"]), controller.update);
+router.delete("/delete/:id", checkRole(["super-admin"]), controller.delete);
 // Bulk actions (đặt trước :id routes)
-router.patch("/bulk-status", controller.bulkUpdateStatus);
-router.delete("/bulk-delete", controller.bulkDelete);
+router.patch(
+  "/bulk-status",
+  checkRole(["super-admin"]),
+  controller.bulkUpdateStatus
+);
+router.delete(
+  "/bulk-delete",
+  checkRole(["super-admin"]),
+  controller.bulkDelete
+);
 
 module.exports = router;
