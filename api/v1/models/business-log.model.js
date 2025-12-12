@@ -27,13 +27,14 @@ const BusinessLogSchema = new mongoose.Schema(
         "Hotel",
         "Province",
         "Vehicle",
+        "AdminAccount", // ✅ THÊM MỚI
       ],
       required: true,
     },
 
     recordIds: [{ type: mongoose.Schema.Types.ObjectId }],
     description: { type: String },
-    details: mongoose.Schema.Types.Mixed, // ✅ ĐÃ SỬA
+    details: mongoose.Schema.Types.Mixed,
     ip: { type: String },
     userAgent: { type: String },
   },
