@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/admin/permission.controller");
-router.get("/", controller.index);
-router.get("/:id", controller.detail);
-router.post("/create", controller.create);
-router.patch("/update/:id", controller.update);
-router.delete("/delete/:id", controller.delete);
+const { checkRole } = require("../../../../middlewares/admin/authAdmin");
+router.get("/", checkRole(["super-admin"]), controller.index);
+router.get("/:id", checkRole(["super-admin"]), controller.detail);
+router.post("/create", checkRole(["super-admin"]), controller.create);
+router.patch("/update/:id", checkRole(["super-admin"]), controller.update);
+router.delete("/delete/:id", checkRole(["super-admin"]), controller.delete);
 module.exports = router;
