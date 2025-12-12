@@ -63,37 +63,21 @@ module.exports.checkAuth = async (req, res, next) => {
 module.exports.checkRole = (allowedRoles = []) => {
   return async (req, res, next) => {
     try {
-      // Kiểm tra xem checkAuth đã chạy chưa
-      if (!req.admin) {
+      if (!req.role) {
         return res.status(401).json({
           success: false,
           message: "Vui lòng đăng nhập trước",
         });
       }
 
-      // Kiểm tra role_id có tồn tại không
-      if (!req.admin.role_id) {
-        return res.status(403).json({
-          success: false,
-          message: "Tài khoản chưa được gán vai trò",
-        });
-      }
-
-      const userRole = req.admin.role_id;
-
-      // Kiểm tra theo cả title và value (linh hoạt hơn)
-      const hasPermission =
-        allowedRoles.includes(userRole.title) ||
-        allowedRoles.includes(userRole.value);
-
-      if (!hasPermission) {
+      if (!allowedRoles.includes(req.role)) {
         return res.status(403).json({
           success: false,
           message: `Bạn không có quyền truy cập. Yêu cầu vai trò: ${allowedRoles.join(
             ", "
           )}`,
           requiredRoles: allowedRoles,
-          yourRole: userRole.title || userRole.value,
+          yourRole: req.role,
         });
       }
 
