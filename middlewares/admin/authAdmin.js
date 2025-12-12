@@ -15,12 +15,14 @@ module.exports.checkAuth = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
+    // decoded = { id: "...", email: "...", role: "Admin" }
 
     const admin = await AdminAccount.findOne({
       _id: decoded.id,
       deleted: false,
       status: "active",
     }).select("-password");
+    //  KHÔNG CẦN .populate("role_id")
 
     if (!admin) {
       return res.status(403).json({
@@ -29,13 +31,15 @@ module.exports.checkAuth = async (req, res, next) => {
       });
     }
 
-    //  GẮN thông tin vào req và CHUYỂN TIẾP
+    // Gắn thông tin vào req
     req.admin = admin;
-    req.admin.adminId = admin._id;
     req.adminId = admin._id;
-    next(); //  Quan trọng: gọi next() thay vì return JSON
+    req.admin.adminId = admin._id;
+    req.role = decoded.role; //  LẤY ROLE TỪ TOKEN (không cần populate)
+
+    next();
   } catch (err) {
-    console.error(" Lỗi xác thực admin:", err.message);
+    console.error("Lỗi xác thực admin:", err.message);
 
     if (err.name === "TokenExpiredError") {
       return res.status(401).json({
@@ -59,7 +63,6 @@ module.exports.checkAuth = async (req, res, next) => {
   }
 };
 
-// Middleware kiểm tra quyền theo role title hoặc value
 module.exports.checkRole = (allowedRoles = []) => {
   return async (req, res, next) => {
     try {
