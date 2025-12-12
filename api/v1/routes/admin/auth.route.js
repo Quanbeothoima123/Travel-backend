@@ -12,7 +12,7 @@ router.get(
   controller.getProfile
 );
 router.patch(
-  "/update",
+  "/update-profile",
   checkRole(["super-admin", "manager", "staff", "writter"]),
   controller.updateProfile
 );
