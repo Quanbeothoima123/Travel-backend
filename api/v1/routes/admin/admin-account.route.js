@@ -19,5 +19,24 @@ router.delete(
   checkRole(["super-admin"]),
   controller.bulkDelete
 );
-
+router.get(
+  "/profile",
+  checkRole(["super-admin", "manager", "staff", "writter", "viewer"]),
+  controller.getProfile
+);
+router.patch(
+  "/update-profile",
+  checkRole(["super-admin", "manager", "staff", "writter"]),
+  controller.updateProfile
+);
+router.patch(
+  "/change-password",
+  checkRole(["super-admin", "manager", "staff", "writter"]),
+  controller.changePassword
+);
+router.get(
+  "/stats",
+  checkRole(["super-admin", "manager", "staff", "writter"]),
+  controller.getStats
+);
 module.exports = router;
