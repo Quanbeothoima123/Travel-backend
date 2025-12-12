@@ -6,7 +6,11 @@ router.post("/login", controller.login);
 router.post("/refresh-token", controller.refreshToken); // ← THÊM ROUTE NÀY
 router.post("/logout", controller.logout); // ← Nếu chưa có thì thêm
 router.get("/checkAuth", controller.checkAuth);
-router.get("/", controller.getProfile);
+router.get(
+  "/profile",
+  checkRole(["super-admin", "manager", "staff", "writter", "viewer"]),
+  controller.getProfile
+);
 router.patch(
   "/update",
   checkRole(["super-admin", "manager", "staff", "writter"]),
