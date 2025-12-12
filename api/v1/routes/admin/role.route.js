@@ -1,12 +1,21 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/admin/role.controller");
-router.get("/stats", controller.getStats); // ← THÊM DÒNG NÀY
-router.get("/", controller.index);
-router.get("/detail/:id", controller.detail);
-router.post("/create", controller.create);
-router.patch("/update/:id", controller.update);
-router.delete("/delete/:id", controller.delete);
-router.patch("/update-permissions", controller.updatePermissions);
-router.get("/permissions/matrix", controller.getPermissionsMatrix);
+const { checkRole } = require("../../../../middlewares/admin/authAdmin");
+router.get("/", checkRole(["super-admin"]), controller.index);
+router.get("/stats", checkRole(["super-admin"]), controller.getStats); // ← THÊM DÒNG NÀY
+router.get("/detail/:id", checkRole(["super-admin"]), controller.detail);
+router.post("/create", checkRole(["super-admin"]), controller.create);
+router.patch("/update/:id", checkRole(["super-admin"]), controller.update);
+router.delete("/delete/:id", checkRole(["super-admin"]), controller.delete);
+router.patch(
+  "/update-permissions",
+  checkRole(["super-admin"]),
+  controller.updatePermissions
+);
+router.get(
+  "/permissions/matrix",
+  checkRole(["super-admin"]),
+  controller.getPermissionsMatrix
+);
 module.exports = router;
