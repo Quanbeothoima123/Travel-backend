@@ -1,3 +1,4 @@
+// index.route.js
 const dashboardRoute = require("../admin/dashboard.route");
 const tourCategoryRoute = require("../admin/tour-category.route");
 const travelTimeRoute = require("../admin/travel-time.route");
