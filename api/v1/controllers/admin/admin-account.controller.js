@@ -1,6 +1,9 @@
 const AdminAccount = require("../../models/admin-account.model");
 const Role = require("../../models/role.model");
-const md5 = require("md5");
+const bcrypt = require("bcrypt");
+
+const SALT_ROUNDS = 10;
+
 // [GET] /api/v1/admin/accounts - Lấy danh sách tài khoản với filter, search, sort, pagination
 module.exports.index = async (req, res) => {
   try {
@@ -106,6 +109,14 @@ module.exports.create = async (req, res) => {
       });
     }
 
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Mật khẩu phải có ít nhất 6 ký tự",
+      });
+    }
+
     // Check if email already exists
     const existingAccount = await AdminAccount.findOne({
       email: email.toLowerCase(),
@@ -128,8 +139,8 @@ module.exports.create = async (req, res) => {
       });
     }
 
-    // Hash password with md5
-    const hashedPassword = md5(password);
+    // Hash password with bcrypt
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
     // Create new account
     const newAccount = new AdminAccount({
@@ -255,9 +266,15 @@ module.exports.update = async (req, res) => {
     if (role_id) updateData.role_id = role_id;
     if (status) updateData.status = status;
 
-    // Hash password if provided (using md5 như login)
+    // Hash password if provided (using bcrypt)
     if (password && password.trim() !== "") {
-      updateData.password = md5(password);
+      if (password.length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: "Mật khẩu phải có ít nhất 6 ký tự",
+        });
+      }
+      updateData.password = await bcrypt.hash(password, SALT_ROUNDS);
     }
 
     // Update account
