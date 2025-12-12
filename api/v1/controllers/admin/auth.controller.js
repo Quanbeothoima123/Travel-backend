@@ -9,7 +9,8 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const ACCESS_TOKEN_EXPIRES = "15m"; // 15 phút
 const REFRESH_TOKEN_EXPIRES = 7 * 24 * 60 * 60 * 1000; // 7 ngày
 const SALT_ROUNDS = 10; // Độ phức tạp của bcrypt
-
+const { logBusiness } = require("../../../../services/businessLog.service");
+const { sendToQueue } = require("../../../../config/rabbitmq");
 // Hàm tạo Access Token
 const generateAccessToken = (admin) => {
   return jwt.sign(
@@ -223,5 +224,285 @@ module.exports.checkAuth = async (req, res) => {
       return res.status(401).json({ message: "Token đã hết hạn" });
     }
     return res.status(401).json({ message: "Token không hợp lệ" });
+  }
+};
+
+module.exports.getProfile = async (req, res) => {
+  try {
+    const account = await AdminAccount.findOne({
+      _id: req.admin._id,
+      deleted: false,
+    })
+      .populate("role_id", "title value description permissions")
+      .select("-password")
+      .lean();
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy tài khoản",
+      });
+    }
+
+    res.json({
+      success: true,
+      profile: account,
+    });
+  } catch (error) {
+    console.error("Error fetching profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy thông tin profile",
+      error: error.message,
+    });
+  }
+};
+
+// [PATCH] /api/v1/admin/profile/update - Cập nhật thông tin profile
+module.exports.updateProfile = async (req, res) => {
+  try {
+    const accountId = req.admin._id;
+    const { fullName, phone, avatar } = req.body;
+
+    const account = await AdminAccount.findOne({
+      _id: accountId,
+      deleted: false,
+    });
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy tài khoản",
+      });
+    }
+
+    // Lưu dữ liệu cũ để log
+    const oldData = {
+      fullName: account.fullName,
+      phone: account.phone,
+      avatar: account.avatar,
+    };
+
+    // Build update object
+    const updateData = {};
+    if (fullName) updateData.fullName = fullName;
+    if (phone !== undefined) updateData.phone = phone;
+    if (avatar !== undefined) updateData.avatar = avatar;
+
+    // Update account
+    await AdminAccount.findByIdAndUpdate(accountId, updateData);
+
+    // Get updated account
+    const updatedAccount = await AdminAccount.findById(accountId)
+      .populate("role_id", "title value description permissions")
+      .select("-password")
+      .lean();
+
+    // ✅ GHI LOG NGHIỆP VỤ
+    await logBusiness({
+      adminId: req.admin._id,
+      adminName: req.admin.fullName,
+      action: "update",
+      model: "AdminAccount",
+      recordIds: [accountId],
+      description: `${req.admin.fullName} đã cập nhật thông tin cá nhân`,
+      details: {
+        before: oldData,
+        after: {
+          fullName: updatedAccount.fullName,
+          phone: updatedAccount.phone,
+          avatar: updatedAccount.avatar,
+        },
+      },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers["user-agent"],
+    });
+
+    // ✅ GỬI NOTIFICATION QUA RABBITMQ
+    await sendToQueue("notifications.admin", {
+      type: "profile_updated",
+      adminId: req.admin._id.toString(),
+      adminName: req.admin.fullName,
+      message: `${req.admin.fullName} đã cập nhật thông tin cá nhân`,
+      timestamp: new Date().toISOString(),
+      data: {
+        changes: Object.keys(updateData),
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Cập nhật thông tin thành công",
+      profile: updatedAccount,
+    });
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi cập nhật thông tin",
+      error: error.message,
+    });
+  }
+};
+
+// [PATCH] /api/v1/admin/profile/change-password - Đổi mật khẩu
+module.exports.changePassword = async (req, res) => {
+  try {
+    const accountId = req.admin._id;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    // Validate
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng điền đầy đủ thông tin",
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Mật khẩu mới và xác nhận mật khẩu không khớp",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Mật khẩu mới phải có ít nhất 6 ký tự",
+      });
+    }
+
+    // Get account with password
+    const account = await AdminAccount.findOne({
+      _id: accountId,
+      deleted: false,
+    });
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy tài khoản",
+      });
+    }
+
+    // Verify current password
+    const isPasswordValid = await bcrypt.compare(
+      currentPassword,
+      account.password
+    );
+
+    if (!isPasswordValid) {
+      // ✅ LOG ATTEMPT FAILED
+      await logBusiness({
+        adminId: req.admin._id,
+        adminName: req.admin.fullName,
+        action: "update",
+        model: "AdminAccount",
+        recordIds: [accountId],
+        description: `${req.admin.fullName} đã thử đổi mật khẩu nhưng mật khẩu hiện tại không đúng`,
+        details: {
+          status: "failed",
+          reason: "Incorrect current password",
+        },
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+      });
+
+      return res.status(400).json({
+        success: false,
+        message: "Mật khẩu hiện tại không đúng",
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+    // Update password
+    await AdminAccount.findByIdAndUpdate(accountId, {
+      password: hashedPassword,
+    });
+
+    // ✅ GHI LOG NGHIỆP VỤ
+    await logBusiness({
+      adminId: req.admin._id,
+      adminName: req.admin.fullName,
+      action: "update",
+      model: "AdminAccount",
+      recordIds: [accountId],
+      description: `${req.admin.fullName} đã đổi mật khẩu thành công`,
+      details: {
+        action: "password_changed",
+        timestamp: new Date().toISOString(),
+      },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers["user-agent"],
+    });
+
+    // ✅ GỬI NOTIFICATION QUA RABBITMQ (cảnh báo bảo mật)
+    await sendToQueue("notifications.admin", {
+      type: "password_changed",
+      adminId: req.admin._id.toString(),
+      adminName: req.admin.fullName,
+      message: `Mật khẩu của tài khoản ${req.admin.fullName} đã được thay đổi`,
+      timestamp: new Date().toISOString(),
+      priority: "high", // Đánh dấu quan trọng
+      data: {
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Đổi mật khẩu thành công",
+    });
+  } catch (error) {
+    console.error("Error changing password:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi đổi mật khẩu",
+      error: error.message,
+    });
+  }
+};
+
+// [GET] /api/v1/admin/profile/stats - Lấy thống kê hoạt động
+module.exports.getStats = async (req, res) => {
+  try {
+    const accountId = req.admin._id;
+
+    const account = await AdminAccount.findOne({
+      _id: accountId,
+      deleted: false,
+    }).select("createdAt lastLogin");
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy tài khoản",
+      });
+    }
+
+    // Tính số ngày đã tham gia
+    const daysJoined = Math.floor(
+      (new Date() - account.createdAt) / (1000 * 60 * 60 * 24)
+    );
+
+    res.json({
+      success: true,
+      stats: {
+        accountCreated: account.createdAt,
+        lastLogin: account.lastLogin,
+        daysJoined,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy thống kê",
+      error: error.message,
+    });
   }
 };
