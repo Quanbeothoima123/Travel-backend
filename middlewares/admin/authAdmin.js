@@ -2,6 +2,7 @@
 const jwt = require("jsonwebtoken");
 const AdminAccount = require("../../api/v1/models/admin-account.model");
 const JWT_SECRET = process.env.JWT_SECRET;
+// middlewares/authAdmin.js
 module.exports.checkAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -15,14 +16,14 @@ module.exports.checkAuth = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
-    // decoded = { id: "...", email: "...", role: "Admin" }
 
     const admin = await AdminAccount.findOne({
       _id: decoded.id,
       deleted: false,
       status: "active",
-    }).select("-password");
-    //  KHÔNG CẦN .populate("role_id")
+    })
+      .select("-password")
+      .populate("role_id"); // ← THÊM populate để lấy role
 
     if (!admin) {
       return res.status(403).json({
@@ -35,7 +36,7 @@ module.exports.checkAuth = async (req, res, next) => {
     req.admin = admin;
     req.adminId = admin._id;
     req.admin.adminId = admin._id;
-    req.role = decoded.role; //  LẤY ROLE TỪ TOKEN (không cần populate)
+    req.role = admin.role_id ? admin.role_id.title : decoded.role; // ← LẤY ROLE TỪ DB hoặc TOKEN
 
     next();
   } catch (err) {
@@ -76,9 +77,7 @@ module.exports.checkRole = (allowedRoles = []) => {
       if (!allowedRoles.includes(req.role)) {
         return res.status(403).json({
           success: false,
-          message: `Bạn không có quyền truy cập. Yêu cầu vai trò: ${allowedRoles.join(
-            ", "
-          )}`,
+          message: `Bạn không có quyền thực hiện điều này!.Xin hãy liên hệ quản trị viên.`,
           requiredRoles: allowedRoles,
           yourRole: req.role,
         });
