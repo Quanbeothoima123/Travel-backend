@@ -7,15 +7,31 @@ router.post(
   checkRole(["super-admin", "manager", "writter"]),
   controller.create
 );
-router.get("/published", controller.getPublishedNews);
-router.get("/manager", controller.getNewsList);
-router.get("/detail/:id", controller.getNewsById);
+router.get(
+  "/published",
+  checkRole(["super-admin", "manager", "staff", "writter", "viewer"]),
+  controller.getPublishedNews
+);
+router.get(
+  "/manager",
+  checkRole(["super-admin", "manager", "staff", "writter", "viewer"]),
+  controller.getNewsList
+);
+router.get(
+  "/detail/:id",
+  checkRole(["super-admin", "manager", "staff", "writter", "viewer"]),
+  controller.getNewsById
+);
 router.delete(
   "/delete/:id",
   checkRole(["super-admin", "manager", "writter"]),
   controller.deleteNews
 );
-router.get("/news-categories", controller.getNewsCategories);
+router.get(
+  "/news-categories",
+  checkRole(["super-admin", "manager", "staff", "writter", "viewer"]),
+  controller.getNewsCategories
+);
 router.get("/authors", controller.getAuthors);
 router.get(
   "/get-data-for-edit/:id",
@@ -27,8 +43,16 @@ router.patch(
   checkRole(["super-admin", "manager", "writter"]),
   controller.updateNews
 );
-router.get("/check-slug/:id", controller.checkSlugAvailability);
-router.get("/detail/:id", controller.getNewsDetail);
+router.get(
+  "/check-slug/:id",
+  checkRole(["super-admin", "manager", "staff", "writter", "viewer"]),
+  controller.checkSlugAvailability
+);
+router.get(
+  "/detail/:id",
+  checkRole(["super-admin", "manager", "staff", "writter", "viewer"]),
+  controller.getNewsDetail
+);
 router.get(
   "/update-status/:id",
   checkRole(["super-admin", "manager", "writter"]),
