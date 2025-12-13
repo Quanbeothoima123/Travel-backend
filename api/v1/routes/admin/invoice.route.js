@@ -6,8 +6,12 @@ const { checkRole } = require("../../../../middlewares/admin/authAdmin");
 router.get("/", checkRole(["super-admin", "manager"]), controller.index);
 
 // GET: Lấy chi tiết một invoice
-router.get("/:id", checkRole(["super-admin", "manager"]), controller.detail);
-
+// router.get("/:id", checkRole(["super-admin", "manager"]), controller.detail);
+router.get(
+  "/detail/:invoiceId",
+  checkRole(["super-admin", "manager"]),
+  controller.getById
+);
 // POST: Tạo invoice mới (admin tạo cho khách)
 router.post(
   "/create",
