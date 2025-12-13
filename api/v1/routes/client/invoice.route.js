@@ -9,4 +9,5 @@ router.get("/detail/:invoiceId", controller.getById);
 router.get("/code/:invoiceCode", controller.getByCode);
 router.get("/send-email/:invoiceId", controller.sendInvoiceEmail);
 router.get("/get-all-invoice", controller.getInvoices);
+router.patch("/cancel/:id", controller.userCancelInvoice);
 module.exports = router;

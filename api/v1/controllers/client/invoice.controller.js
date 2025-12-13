@@ -10,6 +10,7 @@ const emailService = require("../../../../services/emailService");
 const TourCategory = require("../../models/tour-category.model");
 const DOMAIN_WEBSITE = process.env.DOMAIN_WEBSITE || "http://localhost:3000";
 const DOMAIN_BACKEND = process.env.DOMAIN_BACKEND || "http://localhost:5000";
+const MOMO_IPN_BASE_URL = process.env.MOMO_IPN_BASE_URL || DOMAIN_BACKEND; // ← Mới
 const { sendToQueue } = require("../../../../config/rabbitmq");
 // [POST] /api/v1/invoices
 module.exports.createInvoice = async (req, res) => {
@@ -221,7 +222,7 @@ module.exports.payWithMomo = async (req, res) => {
       orderId: invoice._id.toString(),
       orderInfo: `Thanh toán đơn hàng ${invoiceCode}`,
       redirectUrl: `${DOMAIN_WEBSITE}/payment/momo/result`,
-      ipnUrl: `${DOMAIN_BACKEND}/api/v1/invoice/momo-ipn`,
+      ipnUrl: `${MOMO_IPN_BASE_URL}/api/v1/invoice/momo-ipn`,
     });
 
     if (momoRes?.payUrl) {
@@ -802,58 +803,95 @@ module.exports.getInvoiceStatistics = async (req, res) => {
   }
 };
 
-// PATCH /api/v1/invoice/:id/status - Cập nhật status của invoice
-module.exports.updateInvoiceStatus = async (req, res) => {
+// PATCH /api/v1/invoice/user/cancel/:id  - Cập nhật status của invoice
+module.exports.userCancelInvoice = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, note } = req.body;
+    const { note } = req.body;
 
-    // Validate status
-    const validStatuses = ["pending", "paid", "canceled", "refunded"];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Trạng thái không hợp lệ",
-      });
-    }
+    // Tìm invoice
+    const invoice = await Invoice.findById(id).populate("tourId", "title");
 
-    const updateData = { status };
-
-    // Nếu status là paid, cập nhật datePayment
-    if (status === "paid") {
-      updateData.datePayment = new Date();
-      updateData.isPaid = true;
-    }
-
-    // Thêm note nếu có
-    if (note) {
-      updateData.note = note;
-    }
-
-    const updatedInvoice = await Invoice.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
-    })
-      .populate("tourId", "title")
-      .populate("userId", "fullName email");
-
-    if (!updatedInvoice) {
+    if (!invoice) {
       return res.status(404).json({
         success: false,
         message: "Không tìm thấy hóa đơn",
       });
     }
 
+    // Kiểm tra xem đơn hàng đã thanh toán chưa
+    if (invoice.isPaid) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Không thể trực tiếp hủy đơn hàng đã thanh toán.Vui lòng liên hệ hỗ trợ để hủy.",
+      });
+    }
+
+    // Kiểm tra trạng thái hiện tại
+    if (invoice.status === "canceled") {
+      return res.status(400).json({
+        success: false,
+        message: "Đơn hàng đã được hủy trước đó",
+      });
+    }
+
+    if (invoice.status === "refunded") {
+      return res.status(400).json({
+        success: false,
+        message: "Đơn hàng đã được hoàn tiền, không thể hủy",
+      });
+    }
+
+    // Kiểm tra tour đã bắt đầu chưa
+    if (
+      invoice.tourStatus === "on-tour" ||
+      invoice.tourStatus === "completed"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Không thể hủy tour đã khởi hành hoặc đã hoàn thành",
+      });
+    }
+
+    // Kiểm tra thời gian khởi hành (ví dụ: không cho hủy nếu còn < 24h)
+    const departureDate = new Date(invoice.departureDate);
+    const now = new Date();
+    const hoursDiff = (departureDate - now) / (1000 * 60 * 60);
+
+    if (hoursDiff < 24 && hoursDiff > 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Không thể hủy tour trong vòng 24 giờ trước khi khởi hành. Vui lòng liên hệ hotline để được hỗ trợ.",
+      });
+    }
+
+    // Cập nhật status
+    const updateData = {
+      status: "canceled",
+      note: note || invoice.note,
+    };
+
+    const updatedInvoice = await Invoice.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    })
+      .populate("tourId", "title thumbnail slug")
+      .populate("userId", "fullName email phoneNumber");
+
     return res.status(200).json({
       success: true,
-      message: `Cập nhật trạng thái hóa đơn thành ${status} thành công`,
+      message: `Hủy đơn hàng "${
+        updatedInvoice.tourId?.title || "Tour"
+      }" thành công`,
       data: updatedInvoice,
     });
   } catch (error) {
-    console.error("Error in updateInvoiceStatus:", error);
+    console.error("Error in userCancelInvoice:", error);
     return res.status(500).json({
       success: false,
-      message: "Lỗi server khi cập nhật trạng thái hóa đơn",
+      message: "Lỗi server khi hủy đơn hàng",
       error: error.message,
     });
   }
