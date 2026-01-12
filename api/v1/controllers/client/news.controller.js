@@ -5,6 +5,7 @@ const NewsCategory = require("../../models/new-category.model");
 const AdminAccount = require("../../models/admin-account.model");
 const User = require("../../models/user.model");
 const Comment = require("../../models/comment.model");
+const UserFavorite = require("../../models/user-favorite.model");
 const getAllDescendantIds = require("../../../../helpers/getAllDescendantIds");
 /**
  * GET /api/v1/news/published
@@ -397,6 +398,273 @@ const getNewsStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Lỗi server khi lấy thống kê tin tức",
+    });
+  }
+};
+
+module.exports.getUserFavorites = async (req, res) => {
+  try {
+    const userId = req.user.userId; // Lấy từ middleware authentication
+    const {
+      page = 1,
+      limit = 12,
+      q = "",
+      newsCategoryId = "",
+      type = "",
+      language = "",
+      authorType = "",
+      authorId = "",
+      dateFrom = "",
+      dateTo = "",
+      sort = "createdAt-desc",
+    } = req.query;
+
+    // Tìm tất cả favorites của user cho news
+    const favoriteQuery = {
+      userId,
+      targetType: "news",
+    };
+
+    const favorites = await UserFavorite.find(favoriteQuery).select("targetId");
+    const favoriteNewsIds = favorites.map((fav) => fav.targetId);
+
+    if (favoriteNewsIds.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        currentPage: parseInt(page),
+        totalPages: 0,
+        totalResults: 0,
+      });
+    }
+
+    // Build query cho News
+    const newsQuery = {
+      _id: { $in: favoriteNewsIds },
+      deleted: false,
+      status: "published",
+    };
+
+    // Search by title/content
+    if (q) {
+      newsQuery.$or = [
+        { title: { $regex: q, $options: "i" } },
+        { excerpt: { $regex: q, $options: "i" } },
+        { content: { $regex: q, $options: "i" } },
+      ];
+    }
+
+    // Filter by category
+    if (newsCategoryId) {
+      newsQuery.newsCategoryId = newsCategoryId;
+    }
+
+    // Filter by type
+    if (type) {
+      newsQuery.type = type;
+    }
+
+    // Filter by language
+    if (language) {
+      newsQuery.language = language;
+    }
+
+    // Filter by author type
+    if (authorType) {
+      newsQuery["author.type"] = authorType;
+    }
+
+    // Filter by specific author
+    if (authorId) {
+      newsQuery["author.id"] = authorId;
+    }
+
+    // Filter by date range
+    if (dateFrom || dateTo) {
+      newsQuery.publishedAt = {};
+      if (dateFrom) {
+        newsQuery.publishedAt.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        newsQuery.publishedAt.$lte = new Date(dateTo);
+      }
+    }
+
+    // Sorting
+    let sortQuery = {};
+    if (sort) {
+      const [field, order] = sort.split("-");
+      sortQuery[field] = order === "asc" ? 1 : -1;
+    } else {
+      sortQuery.publishedAt = -1;
+    }
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Execute query
+    const [news, totalResults] = await Promise.all([
+      News.find(newsQuery)
+        .sort(sortQuery)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate("newsCategoryId", "title slug")
+        .populate("categoryId", "title slug")
+        .populate("destinationIds", "name slug")
+        .populate("relatedTourIds", "title slug thumbnail")
+        .select("-content")
+        .lean(),
+      News.countDocuments(newsQuery),
+    ]);
+
+    // Thêm thông tin đã thích vào từng bài viết
+    const newsWithFavorite = news.map((item) => ({
+      ...item,
+      isFavorited: true,
+    }));
+
+    const totalPages = Math.ceil(totalResults / parseInt(limit));
+
+    res.json({
+      success: true,
+      data: newsWithFavorite,
+      currentPage: parseInt(page),
+      totalPages,
+      totalResults,
+    });
+  } catch (error) {
+    console.error("Error fetching user favorites:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách bài viết yêu thích",
+      error: error.message,
+    });
+  }
+};
+
+// [POST] /api/v1/news/favorites/:newsId
+// Thêm bài viết vào danh sách yêu thích
+module.exports.addFavorite = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { newsId } = req.params;
+
+    // Kiểm tra bài viết có tồn tại không
+    const news = await News.findOne({
+      _id: newsId,
+      deleted: false,
+      status: "published",
+    });
+
+    if (!news) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy bài viết",
+      });
+    }
+
+    // Kiểm tra đã thích chưa
+    const existingFavorite = await UserFavorite.findOne({
+      userId,
+      targetId: newsId,
+      targetType: "news",
+    });
+
+    if (existingFavorite) {
+      return res.status(400).json({
+        success: false,
+        message: "Bài viết đã có trong danh sách yêu thích",
+      });
+    }
+
+    // Tạo favorite mới
+    const favorite = new UserFavorite({
+      userId,
+      targetId: newsId,
+      targetType: "news",
+    });
+
+    await favorite.save();
+
+    // Cập nhật số lượng likes trong News
+    await News.findByIdAndUpdate(newsId, { $inc: { likes: 1 } });
+
+    res.status(201).json({
+      success: true,
+      message: "Đã thêm vào danh sách yêu thích",
+      data: favorite,
+    });
+  } catch (error) {
+    console.error("Error adding favorite:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi thêm vào danh sách yêu thích",
+      error: error.message,
+    });
+  }
+};
+
+// [DELETE] /api/v1/news/favorites/:newsId
+// Bỏ thích bài viết
+module.exports.removeFavorite = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { newsId } = req.params;
+
+    // Xóa favorite
+    const result = await UserFavorite.findOneAndDelete({
+      userId,
+      targetId: newsId,
+      targetType: "news",
+    });
+
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy bài viết trong danh sách yêu thích",
+      });
+    }
+
+    // Giảm số lượng likes trong News
+    await News.findByIdAndUpdate(newsId, { $inc: { likes: -1 } });
+
+    res.json({
+      success: true,
+      message: "Đã bỏ thích bài viết",
+    });
+  } catch (error) {
+    console.error("Error removing favorite:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi bỏ thích bài viết",
+      error: error.message,
+    });
+  }
+};
+
+// [GET] /api/v1/news/favorites/check/:newsId
+// Kiểm tra bài viết đã được thích chưa
+module.exports.checkFavorite = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { newsId } = req.params;
+
+    const favorite = await UserFavorite.findOne({
+      userId,
+      targetId: newsId,
+      targetType: "news",
+    });
+
+    res.json({
+      success: true,
+      isFavorited: !!favorite,
+    });
+  } catch (error) {
+    console.error("Error checking favorite:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi kiểm tra trạng thái yêu thích",
+      error: error.message,
     });
   }
 };
